@@ -281,23 +281,24 @@ function ensureEmployeeWorkspaceMatched() {
   } else {
     const wsId = 'ws_' + btoa(encodeURIComponent(cleanEmail)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
     const newEmpId = 'emp_' + wsId;
-    teamWorkspaces[newEmpId] = {
-      empId: newEmpId,
-      ownerName: currentUser.name || cleanEmail,
-      ownerEmail: cleanEmail,
-      position: 'Chuyên viên Pháp chế & Hồ sơ',
-      updatedAt: new Date().toISOString(),
-      tasks: [],
-      weeklyReviews: {},
-      employeeNotes: {},
-      adhocTasks: [],
-      activityLogs: []
-    };
+    if (!teamWorkspaces[newEmpId]) {
+      teamWorkspaces[newEmpId] = {
+        empId: newEmpId,
+        ownerName: currentUser.name || cleanEmail,
+        ownerEmail: cleanEmail,
+        position: 'Chuyên viên Pháp chế & Hồ sơ',
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+        weeklyReviews: {},
+        employeeNotes: {},
+        adhocTasks: [],
+        activityLogs: []
+      };
+    }
     activeEmployeeId = newEmpId;
     workspaceData = teamWorkspaces[newEmpId];
     localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
     localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
-    saveWorkspaceData();
   }
 }
 
@@ -452,38 +453,26 @@ async function syncLoadFromCloud(silent = false) {
           saveTrashItems(cloudData.trashItems, false);
         }
 
-        const localTeam = localStorage.getItem(STORAGE_KEYS.TEAM_ROSTER);
-        let shouldUpdate = true;
-        if (localTeam) {
-          try {
-            const parsedLocal = JSON.parse(localTeam);
-            if (cloudData.updatedAt && parsedLocal.updatedAt && new Date(cloudData.updatedAt).getTime() < new Date(parsedLocal.updatedAt).getTime()) {
-              shouldUpdate = false;
-            }
-          } catch (e) {}
-        }
+        // Nạp dữ liệu đồng bộ đầy đủ từ Cloud
+        teamWorkspaces = cloudData.teamWorkspaces;
+        cleanForeignLogs();
+        ensureEmployeeWorkspaceMatched();
 
-        if (shouldUpdate) {
-          teamWorkspaces = cloudData.teamWorkspaces;
-          cleanForeignLogs();
-          ensureEmployeeWorkspaceMatched();
-
-          if (teamWorkspaces[activeEmployeeId]) {
+        if (teamWorkspaces[activeEmployeeId]) {
+          workspaceData = teamWorkspaces[activeEmployeeId];
+        } else {
+          const firstKey = Object.keys(teamWorkspaces)[0];
+          if (firstKey) {
+            activeEmployeeId = firstKey;
             workspaceData = teamWorkspaces[activeEmployeeId];
-          } else {
-            const firstKey = Object.keys(teamWorkspaces)[0];
-            if (firstKey) {
-              activeEmployeeId = firstKey;
-              workspaceData = teamWorkspaces[activeEmployeeId];
-            }
           }
-
-          localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
-          localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
-
-          renderAll();
-          if (!silent) showToast('Đã đồng bộ dữ liệu mới nhất từ Cloud!', 'success');
         }
+
+        localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
+        localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
+
+        renderAll();
+        if (!silent) showToast('Đã đồng bộ dữ liệu mới nhất từ Cloud!', 'success');
       }
     } else if (res && res.ok && !res.payload) {
       syncSaveToCloud();
