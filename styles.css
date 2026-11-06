@@ -1,0 +1,84 @@
+/* Custom styling for WorkFlow Pro Dashboard - Crimson / Burgundy Theme (VASchools Style) */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Active Sidebar Navigation Button - Crimson Accent */
+.nav-btn.active {
+  background: linear-gradient(90deg, rgba(158, 11, 34, 0.95) 0%, rgba(136, 8, 27, 0.85) 100%);
+  color: #ffffff;
+  border-left: 4px solid #fda4af;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(158, 11, 34, 0.25);
+}
+
+.nav-btn:not(.active):hover {
+  background-color: rgba(158, 11, 34, 0.12);
+  color: #9e0b22;
+}
+
+/* Crimson Header Banner like Screenshot */
+.crimson-top-bar {
+  background: linear-gradient(90deg, #9e0b22 0%, #a81029 50%, #90091e 100%);
+}
+
+.crimson-card-header {
+  background: linear-gradient(90deg, #9e0b22 0%, #ad122b 100%);
+  color: #ffffff;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9e0b22;
+}
+
+/* Star selector active state - Blue Accent */
+.star-btn.selected {
+  background-color: #dbeafe;
+  border-color: #2563eb;
+  transform: scale(1.06);
+}
+
+/* Print optimization for Weekly Report */
+@media print {
+  aside,
+  header,
+  #shared-banner,
+  button {
+    display: none !important;
+  }
+  main {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  body {
+    background: #ffffff !important;
+  }
+}

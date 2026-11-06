@@ -1,0 +1,1810 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WorkFlow Pro - Quản Lý Hồ Sơ & Đầu Mục Công Việc Nhân Viên</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Google Fonts: Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#fdf2f4',
+              100: '#fce4e8',
+              200: '#f9ccd4',
+              500: '#b8142c',
+              600: '#9e0b22',
+              700: '#88081b',
+              800: '#6e0615',
+              900: '#540410',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#e9ecef] text-slate-800 font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- TOP CRIMSON HEADER BAR (MATCHING ATTACHED SCREENSHOT) -->
+  <div class="crimson-top-bar text-white px-6 py-3 shadow-md flex flex-wrap items-center justify-between gap-3 sticky top-0 z-40">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
+        <i data-lucide="file-check-2" class="w-5 h-5 text-white"></i>
+      </div>
+      <div>
+        <h1 class="text-base sm:text-lg font-bold tracking-wide uppercase">QUẢN LÝ HỒ SƠ & ĐẦU MỤC CÔNG VIỆC</h1>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-3 text-xs">
+      <span class="hidden sm:inline-block text-white/95 font-medium">
+        Xin chào: <strong id="top-bar-email" class="font-bold underline decoration-white/40">nhilt@vaschools.edu.vn</strong>
+      </span>
+      <span id="top-bar-role-badge" class="bg-white/15 border border-white/30 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5">
+        <i data-lucide="shield" class="w-4 h-4"></i>
+        <span id="top-bar-role-text">Nhân viên</span>
+      </span>
+      <button id="top-bar-sync-btn" onclick="syncLoadFromCloud(false)" class="bg-white/15 hover:bg-white/25 border border-white/30 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5 transition shadow-sm" title="Bấm để đồng bộ dữ liệu mới nhất từ Cloud ngay lập tức">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-300"></i>
+        <span id="top-bar-sync-text">Đồng bộ Cloud</span>
+      </button>
+      <button id="top-bar-whitelist-btn" onclick="openWhitelistModal()" class="hidden bg-blue-600 hover:bg-blue-700 border border-blue-400 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5 transition shadow-sm" title="Quản lý danh sách Email được phép truy cập">
+        <i data-lucide="user-check" class="w-4 h-4"></i>
+        <span>Danh sách Email cấp quyền</span>
+      </button>
+      <button id="top-bar-trash-btn" onclick="openTrashModal()" class="hidden bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5 transition shadow-sm" title="Thùng rác & Khôi phục mục đã xóa">
+        <i data-lucide="trash-2" class="w-4 h-4 text-rose-400"></i>
+        <span>Thùng rác & Khôi phục</span>
+        <span id="trash-badge-count" class="bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1">0</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- TOP BANNER WHEN VIEWING SHARED WORKSPACE (MANAGER READ/REVIEW MODE) -->
+  <div id="shared-banner" class="hidden bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 text-white px-4 py-2.5 text-sm font-medium shadow-sm flex items-center justify-between">
+    <div class="flex items-center space-x-2">
+      <i data-lucide="eye" class="w-4 h-4"></i>
+      <span id="shared-banner-text">Đang xem Bảng công việc được chia sẻ của nhân viên. Bạn có thể chấm điểm và để lại nhận xét trực tiếp trên từng hồ sơ hoặc báo cáo tuần.</span>
+    </div>
+    <button onclick="exitSharedView()" class="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded-md text-xs font-semibold transition">
+      Quay lại bảng của tôi
+    </button>
+  </div>
+
+  <!-- AUTHENTICATION MODAL / EMAIL OTP LOGIN SCREEN -->
+  <div id="auth-screen" class="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden animate-fade-in">
+      <div class="crimson-top-bar p-6 text-white text-center relative">
+        <div class="w-14 h-14 bg-white/15 backdrop-blur-md rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+          <i data-lucide="shield-check" class="w-7 h-7 text-white"></i>
+        </div>
+        <h1 class="text-xl font-bold tracking-tight uppercase">QUẢN LÝ HỒ SƠ & CÔNG VIỆC</h1>
+        <p class="text-rose-100 text-xs mt-1">Đăng nhập Bảo mật bằng Email & Mã Xác Thực OTP</p>
+      </div>
+
+      <div class="p-6 space-y-5">
+        <!-- STEP 1: ENTER EMAIL TO RECEIVE OTP -->
+        <form id="login-step1-form" onsubmit="handleRequestOTP(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Nhập Email công việc đã được cấp quyền *</label>
+            <div class="relative">
+              <i data-lucide="mail" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+              <input type="email" id="auth-email" required placeholder="VD: nhilt@vaschools.edu.vn" oninput="hideWhitelistError()"
+                class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:bg-white transition" />
+            </div>
+            <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+              🔒 Hệ thống <strong>tự động nhận diện quyền Quản lý hoặc Nhân viên</strong> theo đúng Email đã khai báo trước. Email lạ chưa khai báo sẽ không thể truy cập.
+            </p>
+          </div>
+
+          <!-- Access Denied Alert Box if Email is not in Whitelist -->
+          <div id="auth-whitelist-error" class="hidden p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-800 space-y-1">
+            <div class="font-bold flex items-center gap-1.5 text-rose-700">
+              <i data-lucide="shield-alert" class="w-4 h-4 shrink-0"></i>
+              <span>Từ chối truy cập! Email chưa được khai báo</span>
+            </div>
+            <p id="auth-whitelist-error-text" class="text-[11px] text-rose-700 leading-relaxed">
+              Địa chỉ email này không nằm trong danh sách nhân sự được phép truy cập hệ thống. Vui lòng liên hệ Quản lý để được khai báo email.
+            </p>
+          </div>
+
+          <button type="submit" id="btn-send-otp" class="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl shadow-lg shadow-brand-500/25 transition flex items-center justify-center space-x-2 text-sm">
+            <i data-lucide="send" class="w-4 h-4"></i>
+            <span id="btn-send-otp-text">Nhận mã xác thực OTP qua Email</span>
+          </button>
+        </form>
+
+        <!-- STEP 2: ENTER 6-DIGIT OTP CODE -->
+        <form id="login-step2-form" onsubmit="handleVerifyOTP(event)" class="hidden space-y-4">
+          <div class="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 space-y-1">
+            <div class="font-bold flex items-center justify-between">
+              <span class="flex items-center gap-1.5">
+                <i data-lucide="mail-check" class="w-4 h-4 text-blue-600"></i>
+                Đã gửi mã OTP đến Email:
+              </span>
+              <button type="button" onclick="backToEmailStep()" class="text-[11px] text-blue-600 hover:underline font-semibold">Đổi Email</button>
+            </div>
+            <p id="otp-target-email-display" class="font-mono font-bold text-brand-700 text-sm">nhilt@vaschools.edu.vn</p>
+
+            <!-- Real Email Sent Banner (Shown when Gmail Apps Script is configured) -->
+            <div id="otp-real-email-sent-box" class="hidden mt-2 pt-2 border-t border-blue-200/80 text-[11px] text-emerald-800 bg-emerald-50/90 p-2 rounded-lg border border-emerald-200">
+              ✅ <strong>Đã gửi thư chứa 6 số OTP vào hộp thư đến (Inbox)</strong> của email trên! Vui lòng mở Gmail/Webmail của bạn để lấy mã.
+            </div>
+
+            <!-- Instant OTP Display & Quick Fill Box (Only shown if offline) -->
+            <div id="otp-demo-hint-box" class="hidden mt-2 pt-2 border-t border-blue-200/80 flex items-center justify-between text-[11px]">
+              <span>Mã xác thực OTP dự phòng: <strong id="otp-generated-code-display" class="font-mono text-sm bg-white px-2 py-0.5 rounded border border-blue-300 text-brand-700">123456</strong></span>
+              <button type="button" onclick="autoFillOTP()" class="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition shadow-sm">Điền nhanh OTP</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Nhập mã OTP (6 chữ số) *</label>
+            <input type="text" id="auth-otp-input" maxlength="6" pattern="[0-9]{6}" required placeholder="• • • • • •" 
+              class="w-full px-4 py-3 bg-slate-50 border-2 border-blue-300 rounded-xl text-center font-mono text-xl font-bold tracking-[0.5em] text-slate-900 focus:outline-none focus:border-brand-600 focus:bg-white transition" />
+          </div>
+
+          <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition flex items-center justify-center space-x-2 text-sm">
+            <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+            <span>Xác nhận OTP & Truy cập Hệ thống</span>
+          </button>
+
+          <div class="text-center">
+            <button type="button" onclick="resendOTPCode()" class="text-xs text-slate-500 hover:text-brand-600 font-medium">
+              Chưa nhận được mã? <span class="underline">Gửi lại mã OTP mới</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN APPLICATION LAYOUT -->
+  <div class="flex-1 flex flex-col lg:flex-row">
+    
+    <!-- SIDEBAR NAVIGATION (Clean White + Crimson Theme matching screenshot) -->
+    <aside class="w-full lg:w-64 bg-white border-r border-slate-200 text-slate-700 flex flex-col justify-between shrink-0 lg:min-h-screen shadow-sm">
+      <div>
+        <!-- User Profile Summary Card -->
+        <div class="p-4 mx-3 my-4 rounded-xl bg-brand-50/70 border border-brand-100">
+          <div class="flex items-center space-x-3">
+            <div id="user-avatar" class="w-10 h-10 rounded-full bg-brand-600 text-white font-bold flex items-center justify-center text-sm shrink-0 shadow-sm">
+              NV
+            </div>
+            <div class="min-w-0 flex-1">
+              <p id="user-display-name" class="text-sm font-bold text-slate-900 truncate">Nguyễn Văn A</p>
+              <p id="user-display-email" class="text-xs text-slate-500 truncate">nhilt@vaschools.edu.vn</p>
+            </div>
+          </div>
+          <div class="mt-3 pt-2.5 border-t border-brand-100 flex items-center justify-between">
+            <span id="user-role-badge" class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-brand-600 text-white">
+              Nhân viên
+            </span>
+            <button id="sidebar-whitelist-btn" onclick="openWhitelistModal()" class="hidden text-[11px] text-blue-700 hover:underline font-semibold flex items-center gap-1 transition" title="Quản lý danh sách Email Sếp & Nhân viên">
+              <i data-lucide="user-plus" class="w-3 h-3"></i> Cấp quyền Email
+            </button>
+          </div>
+        </div>
+
+        <!-- Navigation Menu -->
+        <nav class="px-3 space-y-1">
+          <!-- EMPLOYEE-ONLY NAVIGATION -->
+          <div id="employee-only-nav" class="space-y-1">
+            <button onclick="switchTab('overview')" id="nav-overview" class="nav-btn w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+              <span>Tổng quan & Phân việc</span>
+            </button>
+            <button onclick="switchTab('dossiers')" id="nav-dossiers" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <div class="flex items-center space-x-3">
+                <i data-lucide="folder-kanban" class="w-4 h-4"></i>
+                <span>Danh sách Hồ sơ</span>
+              </div>
+              <span id="nav-dossier-count" class="bg-brand-100 text-brand-700 text-xs px-2 py-0.5 rounded-full font-bold">0</span>
+            </button>
+            <button onclick="switchTab('schedule')" id="nav-schedule" class="nav-btn w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <i data-lucide="calendar-days" class="w-4 h-4"></i>
+              <span>Lịch phân việc Ngày/Tuần</span>
+            </button>
+            <button onclick="switchTab('journal')" id="nav-journal" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <div class="flex items-center space-x-3">
+                <i data-lucide="notebook-pen" class="w-4 h-4"></i>
+                <span>Nhật ký & Việc phát sinh</span>
+              </div>
+              <span id="nav-journal-count" class="bg-blue-100 text-blue-800 text-[10px] px-2 py-0.5 rounded-full font-bold">Mới</span>
+            </button>
+            <button onclick="switchTab('report')" id="nav-report" class="nav-btn w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <i data-lucide="file-bar-chart-2" class="w-4 h-4"></i>
+              <span>Report Tổng quan Tuần</span>
+            </button>
+          </div>
+
+          <!-- MANAGER-ONLY EXECUTIVE NAVIGATION (Infographic Reports & Employee Journal) -->
+          <div id="manager-only-nav" class="space-y-1.5 hidden">
+            <span class="px-3.5 text-[10px] font-bold uppercase tracking-wider text-brand-700 block mb-1">Cổng Giám Sát Quản Lý</span>
+            <button onclick="switchManagerSection('infographic')" id="nav-mgr-infographic" class="nav-btn active w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <div class="flex items-center space-x-3">
+                <i data-lucide="pie-chart" class="w-4 h-4"></i>
+                <span>Infographic Ngày & Tuần</span>
+              </div>
+              <span class="bg-blue-100 text-blue-800 text-[10px] px-2 py-0.5 rounded-full font-bold">Visual</span>
+            </button>
+            <button onclick="switchManagerSection('journal')" id="nav-mgr-journal" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <div class="flex items-center space-x-3">
+                <i data-lucide="history" class="w-4 h-4"></i>
+                <span>Nhật ký Nhân viên làm gì</span>
+              </div>
+              <span id="nav-team-count" class="bg-brand-100 text-brand-700 text-xs px-2 py-0.5 rounded-full font-bold">NV</span>
+            </button>
+            <button onclick="switchManagerSection('grading')" id="nav-mgr-grading" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <div class="flex items-center space-x-3">
+                <i data-lucide="award" class="w-4 h-4"></i>
+                <span>Chấm điểm & Đánh giá NV</span>
+              </div>
+            </button>
+          </div>
+
+          <!-- Personal Google Drive & Email Quick Tools (Uses User's own Email) -->
+          <div class="pt-3 mt-3 border-t border-slate-200">
+            <span class="px-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Không gian Cá nhân (Theo Email)</span>
+            <div class="grid grid-cols-2 gap-1.5 px-2">
+              <button onclick="openPersonalGoogleApp('drive')" class="flex items-center space-x-1.5 px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-700 text-xs text-slate-700 font-medium transition" title="Mở Google Drive theo đúng Email đang đăng nhập">
+                <i data-lucide="hard-drive" class="w-3.5 h-3.5 text-emerald-600 shrink-0"></i>
+                <span class="truncate">Drive của tôi</span>
+              </button>
+              <button onclick="openPersonalGoogleApp('gmail')" class="flex items-center space-x-1.5 px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-700 text-xs text-slate-700 font-medium transition" title="Mở hộp thư Gmail theo đúng Email đang đăng nhập">
+                <i data-lucide="mail" class="w-3.5 h-3.5 text-brand-600 shrink-0"></i>
+                <span class="truncate">Email của tôi</span>
+              </button>
+            </div>
+          </div>
+        </nav>
+      </div>
+
+      <!-- Bottom Actions (Cloud & Logout) -->
+      <div class="p-4 border-t border-slate-200 space-y-2.5 text-xs">
+        <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100">
+          <div class="flex items-center space-x-2">
+            <span id="sidebar-sync-dot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span id="sidebar-sync-text" class="text-slate-600 font-medium">Đã lưu tự động</span>
+          </div>
+          <button onclick="openFirebaseConfigModal()" class="text-brand-600 hover:underline font-bold">Cloud</button>
+        </div>
+        <button onclick="logoutUser()" class="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-700 text-slate-600 font-semibold transition">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+          <span>Đổi tài khoản / Đăng xuất</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="flex-1 flex flex-col min-w-0">
+      
+      <!-- SUB-HEADER ACTION BAR -->
+      <header class="bg-white border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+        <div class="flex items-center space-x-4">
+          <div>
+            <h2 id="page-title" class="text-base font-bold text-brand-700">Tổng quan & Phân việc trong tuần</h2>
+            <p id="page-subtitle" class="text-xs text-slate-500">Theo dõi tiến độ hồ sơ tiếp nhận, công việc phát sinh và đánh giá từ quản lý</p>
+          </div>
+        </div>
+
+        <!-- Week Selector & Quick Actions -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Employee Switcher Pill (Only visible to Manager role) -->
+          <div id="manager-only-switcher" class="hidden flex items-center bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1 text-xs">
+            <i data-lucide="user-check" class="w-3.5 h-3.5 text-brand-600 mr-1.5"></i>
+            <span class="text-[11px] text-brand-800 font-medium mr-1.5">Đang xem NV:</span>
+            <select id="header-employee-switcher" onchange="switchActiveEmployeeWorkspace(this.value)" class="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer text-xs">
+              <!-- Populated by JS -->
+            </select>
+          </div>
+
+          <!-- Week Picker -->
+          <div class="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
+            <button onclick="changeWeek(-1)" class="p-1 hover:bg-white rounded text-slate-600 transition" title="Tuần trước">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            </button>
+            <div class="px-2.5 text-xs font-semibold text-slate-700 flex items-center space-x-1.5">
+              <i data-lucide="calendar" class="w-3.5 h-3.5 text-brand-600"></i>
+              <span id="current-week-label">Tuần này</span>
+            </div>
+            <button onclick="changeWeek(1)" class="p-1 hover:bg-white rounded text-slate-600 transition" title="Tuần kế tiếp">
+              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+            <button onclick="resetToCurrentWeek()" class="ml-1 px-2 py-0.5 text-[11px] bg-white text-slate-600 rounded shadow-sm hover:text-brand-600 font-medium">
+              Hiện tại
+            </button>
+          </div>
+
+          <!-- Employee-Only Creation Actions (Hidden for Manager) -->
+          <div id="employee-only-header-actions" class="flex flex-wrap items-center gap-2">
+            <!-- Quick Ad-hoc / Boss Task in Journal Button -->
+            <button onclick="openQuickAdhocJournal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition" title="Ghi việc cá nhân hoặc việc phát sinh từ Sếp vào Nhật ký mà không cần khai báo Hồ sơ">
+              <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+              <span>+ Việc Cá nhân / Sếp giao</span>
+            </button>
+
+            <!-- New Dossier / Task Button -->
+            <button onclick="openTaskModal()" class="bg-brand-600 hover:bg-brand-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition">
+              <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+              <span>+ Tiếp nhận Hồ sơ</span>
+            </button>
+
+            <!-- Share with Manager Button -->
+            <button onclick="openShareModal()" class="bg-[#198754] hover:bg-emerald-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition">
+              <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+              <span>Chia sẻ Quản lý</span>
+            </button>
+          </div>
+
+          <!-- Manager-Only Report Actions -->
+          <div id="manager-only-header-actions" class="hidden flex flex-wrap items-center gap-2">
+            <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition">
+              <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+              <span>In Infographic / Xuất PDF</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- CONTENT CONTAINER -->
+      <div class="p-6 space-y-6 flex-1 overflow-y-auto">
+
+        <!-- KPI SUMMARY CARDS (Only visible for Employee tabs) -->
+        <div id="employee-kpi-strip" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Tổng hồ sơ tuần này</p>
+              <p id="stat-total" class="text-2xl font-bold text-slate-900 mt-1">0</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Đã tiếp nhận & phân bổ</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <i data-lucide="folder-open" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Đang xử lý</p>
+              <p id="stat-inprogress" class="text-2xl font-bold text-blue-600 mt-1">0</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Đang thực hiện trong tuần</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <i data-lucide="loader" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Đã hoàn thành</p>
+              <p id="stat-completed" class="text-2xl font-bold text-emerald-600 mt-1">0</p>
+              <p id="stat-rate" class="text-[11px] text-emerald-600 font-medium mt-0.5">Tỷ lệ: 0%</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Sắp đến hạn / Quá hạn</p>
+              <p id="stat-overdue" class="text-2xl font-bold text-rose-600 mt-1">0</p>
+              <p class="text-[11px] text-rose-500 mt-0.5">Cần ưu tiên xử lý ngay</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+              <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+            </div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Điểm đánh giá TB</p>
+              <p id="stat-rating" class="text-2xl font-bold text-blue-600 mt-1">-- / 5★</p>
+              <p id="stat-reviewed-count" class="text-[11px] text-slate-400 mt-0.5">0 hồ sơ đã chấm</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <i data-lucide="star" class="w-5 h-5"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 1: OVERVIEW & QUICK BOARD              -->
+        <!-- ========================================== -->
+        <section id="tab-overview" class="space-y-6">
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left 2 cols: Priority & Upcoming Deadlines -->
+            <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
+              <div class="flex items-center justify-between mb-4">
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <i data-lucide="flame" class="w-4 h-4 text-orange-500"></i>
+                    <span>Hồ sơ & Đầu mục cần chú ý theo Deadline</span>
+                  </h3>
+                  <p class="text-xs text-slate-500">Sắp xếp theo thời hạn gấp nhất trong tuần đang chọn</p>
+                </div>
+                <button onclick="switchTab('dossiers')" class="text-xs text-brand-600 hover:underline font-medium">Xem tất cả →</button>
+              </div>
+              <div id="overview-urgent-list" class="space-y-3">
+                <!-- Populated by JS -->
+              </div>
+              <div id="overview-pagination" class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500"></div>
+            </div>
+
+            <!-- Right 1 col: Manager Weekly Assessment Box & Quick Distribution -->
+            <div class="space-y-6">
+              <!-- Manager Overall Week Review Card -->
+              <div class="crimson-top-bar text-white rounded-2xl p-5 shadow-md">
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs font-semibold uppercase tracking-wider text-rose-200 flex items-center gap-1.5">
+                    <i data-lucide="shield-check" class="w-4 h-4"></i> Đánh giá Tuần của Quản lý
+                  </span>
+                  <span id="week-review-status-badge" class="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full text-white">
+                    Chưa đánh giá
+                  </span>
+                </div>
+                <div id="week-review-display" class="text-xs text-rose-50 space-y-2 leading-relaxed">
+                  <p id="week-review-comment" class="italic text-white/90">"Chưa có nhận xét tổng kết tuần từ Quản lý."</p>
+                  <div class="flex items-center justify-between pt-2 border-t border-white/15 text-[11px] text-rose-100">
+                    <span id="week-review-score">Xếp loại: --</span>
+                    <span id="week-review-by">Người chấm: --</span>
+                  </div>
+                </div>
+                <button onclick="openWeeklyReviewModal()" class="mt-4 w-full py-2 bg-white text-brand-700 hover:bg-rose-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm">
+                  <i data-lucide="message-square-plus" class="w-3.5 h-3.5"></i>
+                  <span>Cập nhật Đánh giá Tuần (Quản lý)</span>
+                </button>
+              </div>
+
+              <!-- Quick Workload by Day Mini Chart -->
+              <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
+                <h3 class="text-sm font-bold text-slate-900 mb-1">Mật độ phân việc trong tuần</h3>
+                <p class="text-xs text-slate-500 mb-3">Số lượng hồ sơ phân bổ từ Thứ 2 đến Chủ Nhật</p>
+                <div id="mini-day-bars" class="space-y-2">
+                  <!-- Populated by JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: DOSSIER INTAKE & TASK LIST          -->
+        <!-- ========================================== -->
+        <section id="tab-dossiers" class="hidden">
+          <!-- Main Card Matching Screenshot Layout -->
+          <div class="bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden">
+            <!-- Crimson Top Card Header -->
+            <div class="crimson-card-header px-5 py-3 flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="list-Checks" class="w-4 h-4 text-white"></i>
+                <h3 class="text-sm font-bold tracking-wide">Danh Sách Hồ Sơ & Đầu Việc Trong Tuần</h3>
+              </div>
+              <div class="flex items-center space-x-2">
+                <button onclick="exportCSV()" class="bg-white/15 hover:bg-white/25 text-white border border-white/30 px-3 py-1 rounded text-xs font-semibold flex items-center gap-1 transition">
+                  <i data-lucide="download" class="w-3.5 h-3.5"></i> Xuất Excel
+                </button>
+                <button onclick="switchTab('overview')" class="bg-white hover:bg-slate-100 text-slate-800 px-3 py-1 rounded text-xs font-semibold shadow-sm transition">
+                  Quay lại
+                </button>
+              </div>
+            </div>
+
+            <!-- Filter & Search Bar (4 Columns like Screenshot) -->
+            <div class="p-4 border-b border-slate-200 bg-slate-50/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="relative flex items-center">
+                <span class="px-3 py-2 bg-slate-100 border border-r-0 border-slate-300 rounded-l-md text-slate-500">
+                  <i data-lucide="search" class="w-4 h-4"></i>
+                </span>
+                <input type="text" id="filter-search" oninput="renderAll()" placeholder="Tìm theo Mã, Nội dung, Tên KH..." 
+                  class="w-full px-3 py-2 bg-white border border-slate-300 rounded-r-md text-xs focus:outline-none focus:border-brand-600" />
+              </div>
+
+              <select id="filter-priority" onchange="renderAll()" class="bg-white border border-slate-300 rounded-md px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-brand-600">
+                <option value="all">-- Tất cả Mức ưu tiên & Loại --</option>
+                <option value="high">Ưu tiên Cao (Gấp)</option>
+                <option value="medium">Ưu tiên Trung bình</option>
+                <option value="low">Ưu tiên Thấp</option>
+              </select>
+
+              <select id="filter-day" onchange="renderAll()" class="bg-white border border-slate-300 rounded-md px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-brand-600">
+                <option value="all">-- Tất cả Ngày trong tuần --</option>
+                <option value="1">Thứ Hai</option>
+                <option value="2">Thứ Ba</option>
+                <option value="3">Thứ Tư</option>
+                <option value="4">Thứ Năm</option>
+                <option value="5">Thứ Sáu</option>
+                <option value="6">Thứ Bảy</option>
+                <option value="0">Chủ Nhật</option>
+              </select>
+
+              <select id="filter-status" onchange="renderAll()" class="bg-white border border-slate-300 rounded-md px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-brand-600">
+                <option value="all">-- Trạng thái --</option>
+                <option value="completed">Đã hoàn thành / Đã duyệt</option>
+                <option value="in_progress">Đang xử lý</option>
+                <option value="pending">Chờ xử lý / Chưa duyệt</option>
+                <option value="overdue">Quá hạn</option>
+              </select>
+            </div>
+
+            <!-- Dossier Table -->
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-white border-b-2 border-slate-200 text-xs font-bold text-slate-800">
+                    <th class="py-3.5 px-4">Mã Hồ Sơ</th>
+                    <th class="py-3.5 px-3">Người Xử Lý</th>
+                    <th class="py-3.5 px-3">Loại</th>
+                    <th class="py-3.5 px-4">Nội Dung Hồ Sơ / Đầu Việc</th>
+                    <th class="py-3.5 px-3">Đơn Vị / KH</th>
+                    <th class="py-3.5 px-3">Hạn Cuối</th>
+                    <th class="py-3.5 px-3">Trạng Thái</th>
+                    <th class="py-3.5 px-4 text-right">Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody id="dossier-table-body" class="divide-y divide-slate-200 text-xs">
+                  <!-- Populated by JS -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Table Footer with 7-row Pagination -->
+            <div id="dossier-pagination" class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <span id="dossier-footer-count">Hiển thị hồ sơ trong tuần</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: DAILY / WEEKLY SCHEDULE BOARD       -->
+        <!-- ========================================== -->
+        <section id="tab-schedule" class="hidden space-y-4">
+          <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-bold text-slate-900">Bảng Phân Việc Theo Ngày Trong Tuần (Thứ 2 – Chủ Nhật)</h3>
+              <p class="text-xs text-slate-500">Giúp nhân viên & quản lý nhìn rõ ngày nào tiếp nhận và xử lý những hồ sơ nào</p>
+            </div>
+            <button onclick="openTaskModal()" class="text-xs bg-brand-50 text-brand-700 hover:bg-brand-100 font-semibold px-3 py-1.5 rounded-xl transition flex items-center gap-1">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Phân việc vào ngày
+            </button>
+          </div>
+
+          <!-- 7-Day Grid -->
+          <div id="weekly-schedule-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
+            <!-- Populated by JS (Mon -> Sun columns) -->
+          </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 4: WEEKLY SUMMARY REPORT               -->
+        <!-- ========================================== -->
+        <section id="tab-report" class="hidden space-y-6">
+          <!-- Report Header Card -->
+          <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-brand-50 text-brand-700 mb-2">
+                <i data-lucide="Sparkles" class="w-3.5 h-3.5"></i> Báo cáo Tổng kết Tuần tự động
+              </span>
+              <h3 id="report-week-title" class="text-lg font-bold text-slate-900">Báo cáo Tổng quan Kết quả Công việc Tuần</h3>
+              <p id="report-employee-meta" class="text-xs text-slate-500 mt-0.5">Nhân viên thực hiện: Nguyễn Văn A</p>
+            </div>
+            <div class="flex items-center gap-2.5">
+              <button onclick="window.print()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+                <i data-lucide="printer" class="w-4 h-4"></i> In / Xuất PDF
+              </button>
+              <button onclick="openShareModal()" class="px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+                <i data-lucide="send" class="w-4 h-4"></i> Gửi Report cho Quản lý
+              </button>
+            </div>
+          </div>
+
+          <!-- Charts Row -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+              <h4 class="text-sm font-bold text-slate-800 mb-1">Biểu đồ Trạng thái Xử lý Hồ sơ</h4>
+              <p class="text-xs text-slate-500 mb-4">Tỷ lệ hoàn thành, đang làm và quá hạn trong tuần</p>
+              <div class="h-60 flex items-center justify-center">
+                <canvas id="chart-status"></canvas>
+              </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+              <h4 class="text-sm font-bold text-slate-800 mb-1">Khối lượng Tiếp nhận & Hoàn thành theo Ngày</h4>
+              <p class="text-xs text-slate-500 mb-4">Thống kê từ Thứ Hai đến Chủ Nhật</p>
+              <div class="h-60 flex items-center justify-center">
+                <canvas id="chart-daily"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detailed Written Summary & Manager Sign-off -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+              <h4 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <i data-lucide="clipboard-list" class="w-4 h-4 text-brand-600"></i>
+                <span>Chi tiết Tổng hợp Hồ sơ theo Phân loại trong Tuần</span>
+              </h4>
+              <div id="report-category-breakdown" class="space-y-3">
+                <!-- Populated by JS -->
+              </div>
+
+              <div class="pt-4 border-t border-slate-100">
+                <h5 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Danh sách hồ sơ nổi bật / cần lưu ý</h5>
+                <div id="report-highlights" class="space-y-2 text-xs text-slate-700">
+                  <!-- Populated by JS -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Employee Self-Note & Manager Review Box -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-5">
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Báo cáo giải trình / Đề xuất của Nhân viên</label>
+                <textarea id="employee-weekly-note" rows="4" oninput="saveEmployeeWeeklyNote()" placeholder="Nhập tóm tắt thuận lợi, khó khăn hoặc đề xuất hỗ trợ trong tuần..."
+                  class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+              </div>
+
+              <div class="pt-4 border-t border-slate-200">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-bold uppercase tracking-wider text-blue-600 flex items-center gap-1">
+                    <i data-lucide="award" class="w-4 h-4"></i> Nhận xét & Chấm điểm của Quản lý
+                  </span>
+                  <button onclick="openWeeklyReviewModal()" class="text-xs text-brand-600 font-semibold hover:underline">Chấm điểm</button>
+                </div>
+                <div id="report-manager-review-box" class="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/80 text-xs space-y-1.5">
+                  <!-- Populated by JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 5: DAILY WORK JOURNAL & AD-HOC TASKS   -->
+        <!-- ========================================== -->
+        <section id="tab-journal" class="hidden space-y-6">
+          <!-- CARD 1: PERSONAL & BOSS-ASSIGNED AD-HOC TASKS (NO DOSSIER DECLARATION NEEDED) -->
+          <div class="bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden">
+            <div class="crimson-card-header px-5 py-3 flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="zap" class="w-4 h-4 text-blue-200"></i>
+                <h3 class="text-sm font-bold tracking-wide">Đầu Mục Công Việc Cá Nhân Tự Ghi & Việc Phát Sinh Từ Sếp (Ghi trực tiếp vào Nhật ký)</h3>
+              </div>
+              <span class="text-[11px] bg-white/15 px-2.5 py-0.5 rounded text-white font-medium">
+                Không cần khai báo trong Tiếp nhận Hồ sơ
+              </span>
+            </div>
+
+            <!-- Fast Entry Form for Personal / Boss Ad-hoc Task -->
+            <form id="adhoc-journal-form" onsubmit="handleAdhocTaskSubmit(event)" class="p-4 bg-brand-50/40 border-b border-slate-200 space-y-3 text-xs">
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
+                <div class="lg:col-span-3">
+                  <label class="block font-bold text-slate-700 mb-1">Nguồn / Loại việc phát sinh *</label>
+                  <select id="adhoc-source" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md font-semibold text-slate-800 focus:outline-none focus:border-brand-600">
+                    <option value="boss">👔 Phát sinh từ Sếp giao</option>
+                    <option value="personal">📌 Việc cá nhân tự ghi</option>
+                    <option value="support">⚡ Phối hợp / Hỗ trợ đột xuất</option>
+                  </select>
+                </div>
+
+                <div class="lg:col-span-4">
+                  <label class="block font-bold text-slate-700 mb-1">Nội dung đầu mục công việc *</label>
+                  <input type="text" id="adhoc-title" required placeholder="VD: Sếp giao tổng hợp gấp bảng phí CLB ngoài giờ NH 2026-2027..." 
+                    class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-600" />
+                </div>
+
+                <div class="lg:col-span-2">
+                  <label class="block font-bold text-slate-700 mb-1">Người giao / Đơn vị</label>
+                  <input type="text" id="adhoc-requester" placeholder="VD: Ban Giám hiệu / P.KD" 
+                    class="w-full px-3 py-2 bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-600" />
+                </div>
+
+                <div class="lg:col-span-2">
+                  <label class="block font-bold text-slate-700 mb-1">Ngày & Khung giờ</label>
+                  <input type="date" id="adhoc-date" required 
+                    class="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-600" />
+                </div>
+
+                <div class="lg:col-span-1 flex items-end">
+                  <button type="submit" class="w-full py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-md shadow-sm flex items-center justify-center gap-1 transition">
+                    <i data-lucide="plus" class="w-4 h-4"></i> Lưu
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <input type="text" id="adhoc-note" placeholder="Ghi chú kết quả xử lý / Link file nhanh (nếu có)..." 
+                    class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-md text-xs focus:outline-none focus:border-brand-600" />
+                </div>
+                <div class="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>💡 Mẹo: Các đầu mục này lưu thẳng vào Nhật ký ngày & Báo cáo tuần của bạn, giúp Sếp thấy rõ toàn bộ việc không tên/phát sinh bạn đã xử lý.</span>
+                </div>
+              </div>
+            </form>
+
+            <!-- Table of Personal & Boss-Assigned Ad-hoc Tasks -->
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-white border-b-2 border-slate-200 text-xs font-bold text-slate-800">
+                    <th class="py-3 px-4">Mã Nhật Ký</th>
+                    <th class="py-3 px-3">Nguồn Việc</th>
+                    <th class="py-3 px-4">Nội Dung Đầu Mục Cá Nhân / Sếp Giao</th>
+                    <th class="py-3 px-3">Người Giao / Đơn Vị</th>
+                    <th class="py-3 px-3">Ngày Thực Hiện</th>
+                    <th class="py-3 px-3">Trạng Thái</th>
+                    <th class="py-3 px-4 text-right">Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody id="adhoc-tasks-tbody" class="divide-y divide-slate-200 text-xs">
+                  <!-- Populated by JS -->
+                </tbody>
+              </table>
+            </div>
+            <div id="adhoc-pagination" class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"></div>
+          </div>
+
+          <!-- CARD 2: CHRONOLOGICAL ACTIVITY TIMELINE -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left 2 cols: Chronological Activity Stream grouped by day -->
+            <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
+                <h4 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <i data-lucide="clock" class="w-4 h-4 text-brand-600"></i>
+                  <span>Lịch sử Thao tác & Dòng thời gian Nhật ký Tự động</span>
+                </h4>
+                <span id="journal-total-badge" class="text-xs text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full font-bold">0 bản ghi</span>
+              </div>
+              <div id="journal-timeline-container" class="space-y-6">
+                <!-- Populated by JS -->
+              </div>
+              <div id="journal-pagination" class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"></div>
+            </div>
+
+            <!-- Right 1 col: Quick Note & Auto-Save Info -->
+            <div class="space-y-6">
+              <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-brand-700 flex items-center gap-1.5">
+                  <i data-lucide="pen-tool" class="w-3.5 h-3.5"></i> Ghi chú nhanh vào dòng thời gian
+                </h4>
+                <div class="flex flex-col gap-2">
+                  <input type="text" id="quick-journal-input" onkeydown="if(event.key==='Enter') addManualJournalEntry()" placeholder="Nhập ghi chú nhanh trong ngày..." 
+                    class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md text-xs focus:outline-none focus:border-brand-600" />
+                  <button onclick="addManualJournalEntry()" class="w-full py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+                    <i data-lucide="check" class="w-3.5 h-3.5"></i> Lưu ghi chú nhanh
+                  </button>
+                </div>
+              </div>
+
+              <div class="crimson-top-bar text-white p-5 rounded-xl shadow-md space-y-3">
+                <div class="flex items-center space-x-2 text-blue-200 text-xs font-bold uppercase tracking-wider">
+                  <i data-lucide="shield-check" class="w-4 h-4"></i>
+                  <span>Cơ chế Tự động Lưu Lịch sử (Audit Log)</span>
+                </div>
+                <p class="text-xs text-rose-50 leading-relaxed">
+                  1. <strong>Mọi thao tác đều có lịch sử:</strong> Khởi tạo, chỉnh sửa nội dung, đổi tiến độ %, hoàn thành, xóa hoặc ghi việc phát sinh từ Sếp đều tự động lưu vết chi tiết.<br/>
+                  2. <strong>Đồng bộ sang Báo cáo Tuần & Quản lý:</strong> Cuối tuần hệ thống tự động thống kê cả Hồ sơ lẫn Việc phát sinh để Quản lý đánh giá.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ======================================================= -->
+        <!-- TAB 6: MANAGER EXECUTIVE INFOGRAPHIC & JOURNAL HUB      -->
+        <!-- ======================================================= -->
+        <section id="tab-team" class="hidden space-y-6">
+          <!-- Executive Top Control & Filter Bar -->
+          <div class="crimson-top-bar text-white p-6 rounded-2xl shadow-md flex flex-wrap items-center justify-between gap-4">
+            <div class="space-y-1">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-blue-100 border border-white/20">
+                <i data-lucide="pie-chart" class="w-3.5 h-3.5"></i> Cổng Giám Sát Dành Cho Cấp Quản Lý (Executive Infographic & Journal)
+              </span>
+              <h3 class="text-lg font-bold">Báo Cáo Infographic Ngày / Tuần & Nhật Ký Công Việc Nhân Viên</h3>
+              <p class="text-xs text-rose-100">Theo dõi trực quan nhân viên đã làm được những gì trong ngày và trong tuần qua hệ thống Infographic và Nhật ký tự động.</p>
+            </div>
+
+            <!-- Filter by Employee + Section Switcher Pills -->
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="flex items-center bg-white/15 border border-white/25 rounded-xl px-3 py-2 text-xs">
+                <i data-lucide="users" class="w-4 h-4 text-blue-200 mr-2"></i>
+                <span class="text-rose-100 mr-2 font-medium">Xem nhân viên:</span>
+                <select id="team-filter-emp" onchange="renderTeamTab()" class="bg-transparent font-bold text-white focus:outline-none cursor-pointer text-xs">
+                  <option value="all" class="text-slate-900">Tất cả nhân viên</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Sub-Navigation Pills for Manager -->
+          <div class="bg-white p-2 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" id="pill-mgr-infographic" onclick="switchManagerSection('infographic')" class="px-4 py-2 rounded-xl text-xs font-bold bg-brand-600 text-white shadow-sm flex items-center gap-2 transition">
+                <i data-lucide="bar-chart-big" class="w-4 h-4"></i>
+                <span>1. Báo cáo Infographic (Ngày & Tuần)</span>
+              </button>
+              <button type="button" id="pill-mgr-journal" onclick="switchManagerSection('journal')" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-2 transition">
+                <i data-lucide="notebook-text" class="w-4 h-4"></i>
+                <span>2. Nhật ký Nhân viên đã làm gì</span>
+              </button>
+              <button type="button" id="pill-mgr-grading" onclick="switchManagerSection('grading')" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-2 transition">
+                <i data-lucide="award" class="w-4 h-4"></i>
+                <span>3. Chấm điểm & Đánh giá kết quả</span>
+              </button>
+            </div>
+            <span class="text-[11px] text-slate-400 px-3 hidden sm:inline-block">💡 Chế độ Quản lý: Chỉ xem báo cáo Infographic, nhật ký & đánh giá</span>
+          </div>
+
+          <!-- ===================================================== -->
+          <!-- MANAGER SECTION 1: VISUAL INFOGRAPHIC (DAILY & WEEKLY)-->
+          <!-- ===================================================== -->
+          <div id="mgr-sec-infographic" class="space-y-6">
+            <!-- ROW 1: 4 VISUAL INFOGRAPHIC GAUGE CARDS -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <!-- Card 1: Radial Completion Gauge -->
+              <div class="bg-gradient-to-br from-emerald-600 to-teal-700 text-white p-5 rounded-2xl shadow-md flex items-center justify-between">
+                <div class="space-y-1">
+                  <span class="text-[11px] uppercase tracking-wider font-bold text-emerald-100">Tỷ lệ Hoàn thành Tuần</span>
+                  <p id="team-stat-done-rate" class="text-2xl font-extrabold">0%</p>
+                  <p id="team-stat-total-tasks" class="text-xs text-emerald-100">0 / 0 đầu việc đã xong</p>
+                </div>
+                <div class="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center border border-white/20">
+                  <i data-lucide="check-circle-2" class="w-7 h-7 text-white"></i>
+                </div>
+              </div>
+
+              <!-- Card 2: Total Workload & Adhoc Done -->
+              <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-5 rounded-2xl shadow-md flex items-center justify-between">
+                <div class="space-y-1">
+                  <span class="text-[11px] uppercase tracking-wider font-bold text-blue-100">Việc Phát sinh & Nhật ký</span>
+                  <p id="team-stat-adhoc-count" class="text-2xl font-extrabold">0 mục</p>
+                  <p id="team-stat-members" class="text-xs text-blue-100">Đang theo dõi 2 Nhân viên</p>
+                </div>
+                <div class="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center border border-white/20">
+                  <i data-lucide="zap" class="w-7 h-7 text-white"></i>
+                </div>
+              </div>
+
+              <!-- Card 3: On-time vs Overdue -->
+              <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div class="space-y-1">
+                  <span class="text-[11px] uppercase tracking-wider font-bold text-slate-400">Cảnh báo Trễ Deadline</span>
+                  <p id="team-stat-overdue" class="text-2xl font-extrabold text-rose-600">0 hồ sơ</p>
+                  <p id="team-stat-ontime-text" class="text-xs text-emerald-600 font-semibold">100% đúng tiến độ</p>
+                </div>
+                <div class="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
+                  <i data-lucide="clock-alert" class="w-7 h-7"></i>
+                </div>
+              </div>
+
+              <!-- Card 4: Quality & Weekly Review -->
+              <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div class="space-y-1">
+                  <span class="text-[11px] uppercase tracking-wider font-bold text-slate-400">Đánh giá & Xếp loại</span>
+                  <p id="team-stat-reviewed" class="text-2xl font-extrabold text-blue-600">0 / 2 NV</p>
+                  <p id="team-stat-avg-star" class="text-xs text-slate-500">Điểm chất lượng TB: --★</p>
+                </div>
+                <div class="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                  <i data-lucide="award" class="w-7 h-7"></i>
+                </div>
+              </div>
+            </div>
+
+            <!-- ROW 2: DAILY INFOGRAPHIC REPORT (BÁO CÁO INFOGRAPHIC HÀNG NGÀY) -->
+            <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+              <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center space-x-3">
+                  <div class="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300">
+                    <i data-lucide="calendar-check-2" class="w-5 h-5"></i>
+                  </div>
+                  <div>
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-blue-300 block">DAILY INFOGRAPHIC REPORT</span>
+                    <h4 class="text-sm sm:text-base font-bold">Infographic Báo Cáo Hàng Ngày: Nhân viên đã làm gì trong ngày?</h4>
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-xs text-slate-300">Chọn ngày xem báo cáo:</span>
+                  <input type="date" id="mgr-daily-date" onchange="renderTeamTab()" class="px-3 py-1.5 rounded-xl bg-white/10 border border-white/20 text-white text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  <button type="button" onclick="setManagerDailyToday()" class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition">Hôm nay</button>
+                </div>
+              </div>
+
+              <!-- Quick 7-Day Selector Bar inside Daily Infographic -->
+              <div id="mgr-daily-weekday-pills" class="px-6 py-3 bg-slate-50 border-b border-slate-200/80 flex flex-wrap items-center gap-2">
+                <!-- Populated by JS -->
+              </div>
+
+              <!-- Daily Infographic Content Grid -->
+              <div id="mgr-daily-infographic-body" class="p-6">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <!-- ROW 3: WEEKLY INFOGRAPHIC CHARTS & CATEGORY BREAKDOWN -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <!-- Left 5 Cols: Infographic Breakdown by Legal Category -->
+              <div class="lg:col-span-5 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                    <div>
+                      <span class="text-[10px] font-bold uppercase tracking-wider text-brand-600 block">WEEKLY CATEGORY INFOGRAPHIC</span>
+                      <h4 class="text-sm font-bold text-slate-900">Tỷ trọng Nhóm Công việc đã xử lý trong Tuần</h4>
+                    </div>
+                    <i data-lucide="layers" class="w-5 h-5 text-brand-600"></i>
+                  </div>
+                  <div id="mgr-infographic-categories" class="space-y-3">
+                    <!-- Populated by JS -->
+                  </div>
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Tổng hợp tự động từ đầu việc & nhật ký nhân viên</span>
+                  <span class="font-bold text-slate-600">Theo tuần đang chọn</span>
+                </div>
+              </div>
+
+              <!-- Right 7 Cols: Visual Charts (Daily Rhythm + Status Donut) -->
+              <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-blue-600">STATUS INFOGRAPHIC</span>
+                  <h4 class="text-sm font-bold text-slate-900 mb-3">Cơ cấu Hoàn thành Công việc Tuần</h4>
+                  <div class="h-56 flex items-center justify-center flex-1">
+                    <canvas id="mgr-chart-status"></canvas>
+                  </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col">
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600">WEEKLY RHYTHM INFOGRAPHIC</span>
+                  <h4 class="text-sm font-bold text-slate-900 mb-3">Nhịp độ Giải quyết Công việc (T2 – CN)</h4>
+                  <div class="h-56 flex items-center justify-center flex-1">
+                    <canvas id="mgr-chart-daily"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ROW 4: EMPLOYEE WEEKLY SCORECARD INFOGRAPHICS -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <span class="text-[10px] font-bold uppercase tracking-wider text-brand-700 block">EMPLOYEE WEEKLY INFOGRAPHIC CARDS</span>
+                  <h4 class="text-sm font-bold text-slate-900">Thẻ Infographic Tổng kết Hiệu suất từng Nhân viên trong Tuần</h4>
+                </div>
+              </div>
+              <div id="team-employees-grid" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- ===================================================== -->
+          <!-- MANAGER SECTION 2: EMPLOYEE WORK JOURNAL & TIMELINE   -->
+          <!-- ===================================================== -->
+          <div id="mgr-sec-journal" class="hidden space-y-6">
+            <!-- Part A: Chronological Activity Stream (Ai đã làm gì, lúc mấy giờ) -->
+            <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6">
+              <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+                <div>
+                  <h4 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Nhật ký Hoạt động Chi tiết của Nhân viên (Theo dõi Nhân viên đã làm những gì)</span>
+                  </h4>
+                  <p class="text-xs text-slate-500 mt-0.5">Ghi lại đầy đủ thời gian thực mọi đầu việc nhân viên đã tiếp nhận, cập nhật tiến độ, hoàn thành hoặc ghi chú trong ngày</p>
+                </div>
+              </div>
+              <div id="team-live-feed-container" class="space-y-2.5">
+                <!-- Populated by JS -->
+              </div>
+              <div id="team-feed-pagination" class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"></div>
+            </div>
+
+            <!-- Part B: Employee Ad-hoc & Daily Journal Tasks Table -->
+            <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+              <div class="p-5 border-b border-slate-100">
+                <h4 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <i data-lucide="notebook-pen" class="w-4 h-4 text-blue-600"></i>
+                  <span>Sổ Nhật ký Việc Phát sinh từ Sếp & Việc Cá nhân Nhân viên đã thực hiện</span>
+                </h4>
+                <p class="text-xs text-slate-500 mt-0.5">Danh sách các công việc phát sinh hàng ngày ngoài hồ sơ cố định mà nhân viên đã tự giác ghi nhận và xử lý</p>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      <th class="py-3 px-4">Nhân viên thực hiện</th>
+                      <th class="py-3 px-3">Mã & Nguồn việc</th>
+                      <th class="py-3 px-4">Nội dung công việc đã làm</th>
+                      <th class="py-3 px-3">Người giao / Phối hợp</th>
+                      <th class="py-3 px-3">Ngày thực hiện</th>
+                      <th class="py-3 px-4 text-right">Kết quả</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mgr-adhoc-journal-tbody" class="divide-y divide-slate-200/60 text-xs">
+                    <!-- Populated by JS -->
+                  </tbody>
+                </table>
+              </div>
+              <div id="mgr-adhoc-pagination" class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"></div>
+            </div>
+          </div>
+
+          <!-- ===================================================== -->
+          <!-- MANAGER SECTION 3: GRADING & EVALUATION               -->
+          <!-- ===================================================== -->
+          <div id="mgr-sec-grading" class="hidden space-y-6">
+            <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+              <div class="p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 class="text-sm font-bold text-slate-900">Đánh giá & Chấm điểm Kết quả Đầu việc của Nhân viên trong Tuần</h4>
+                  <p class="text-xs text-slate-500">Quản lý xem kết quả bàn giao, mở link tài liệu Drive của nhân viên và chấm điểm chất lượng (1–5★)</p>
+                </div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      <th class="py-3 px-4">Nhân viên</th>
+                      <th class="py-3 px-4">Đầu việc / Kết quả xử lý & Link tài liệu</th>
+                      <th class="py-3 px-3">Ngày thực hiện</th>
+                      <th class="py-3 px-3">Deadline</th>
+                      <th class="py-3 px-3">Tiến độ</th>
+                      <th class="py-3 px-3">Điểm đánh giá</th>
+                      <th class="py-3 px-4 text-right">Chấm điểm</th>
+                    </tr>
+                  </thead>
+                  <tbody id="team-all-tasks-tbody" class="divide-y divide-slate-200/60 text-xs">
+                    <!-- Populated by JS -->
+                  </tbody>
+                </table>
+              </div>
+              <div id="team-tasks-pagination" class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"></div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 1: CREATE / EDIT DOSSIER & TASK                     -->
+  <!-- ========================================================= -->
+  <div id="task-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-fade-in">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
+            <i data-lucide="file-plus-2" class="w-4 h-4"></i>
+          </div>
+          <h3 id="task-modal-title" class="text-base font-bold text-slate-900">Tiếp nhận Hồ sơ / Đầu mục Công việc Mới</h3>
+        </div>
+        <button onclick="closeTaskModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="task-form" onsubmit="handleTaskSubmit(event)" class="p-6 space-y-4 text-xs">
+        <input type="hidden" id="task-id" />
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Mã Hồ sơ *</label>
+            <input type="text" id="task-code" required placeholder="VD: HS-2026-01" 
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono" />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block font-semibold text-slate-700 mb-1">Tên Hồ sơ / Đầu mục công việc *</label>
+            <input type="text" id="task-title" required placeholder="VD: Thẩm định hồ sơ hợp đồng KH Công ty Minh Phát" 
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Khách hàng / Đối tác / Nguồn</label>
+            <input type="text" id="task-client" placeholder="VD: P. Kinh doanh / Đối tác..." 
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Loại hồ sơ / Nhóm việc *</label>
+            <select id="task-category" onchange="toggleCustomCategoryInput()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="Rà soát Hợp đồng">Rà soát Hợp đồng</option>
+              <option value="Cung cấp giấy tờ pháp lý">Cung cấp giấy tờ pháp lý</option>
+              <option value="Tư vấn pháp lý và hỗ trợ nội bộ">Tư vấn pháp lý và hỗ trợ nội bộ</option>
+              <option value="Nghiên cứu, thực hiện các dự án cho nội bộ">Nghiên cứu, thực hiện các dự án cho nội bộ</option>
+              <option value="Cập nhật các quy định pháp luật mới">Cập nhật các quy định pháp luật mới</option>
+              <option value="Lưu trữ và quản lý giấy tờ pháp lý nội bộ">Lưu trữ và quản lý giấy tờ pháp lý nội bộ</option>
+              <option value="Làm việc với CQNN và Đơn vị dịch vụ">Làm việc với CQNN và Đơn vị dịch vụ</option>
+              <option value="Giải quyết các yêu cầu phát sinh">Giải quyết các yêu cầu phát sinh</option>
+              <option value="Khác">Khác..... (Nhập tay)</option>
+            </select>
+            <div id="custom-category-wrapper" class="hidden mt-2">
+              <input type="text" id="task-category-custom" placeholder="Nhập tay tên loại hồ sơ / nhóm việc khác..." 
+                class="w-full px-3 py-2 bg-blue-50/50 border border-blue-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Mức độ ưu tiên</label>
+            <select id="task-priority" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="high">🔴 Cao (Gấp)</option>
+              <option value="medium" selected>🔵 Trung bình</option>
+              <option value="low">🟢 Thấp</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 p-3.5 bg-blue-50/50 rounded-xl border border-blue-100">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Ngày tiếp nhận / Phân việc *</label>
+            <input type="date" id="task-assigned-date" required 
+              class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label class="block font-semibold text-rose-700 mb-1">Deadline hoàn thành (Giờ & Ngày) *</label>
+            <input type="datetime-local" id="task-deadline" required 
+              class="w-full px-3 py-2 bg-white border border-rose-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500" />
+          </div>
+          <div>
+            <label class="block font-semibold text-blue-800 mb-1 flex items-center justify-between">
+              <span>Người tiếp nhận xử lý</span>
+              <span class="text-[10px] text-blue-600 font-normal">(Mặc định theo Email)</span>
+            </label>
+            <input type="text" id="task-assignee" readonly 
+              class="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl font-semibold text-slate-700 cursor-not-allowed focus:outline-none" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Trạng thái xử lý</label>
+            <select id="task-status" onchange="syncProgressWithStatus()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="pending">⏳ Chờ xử lý</option>
+              <option value="in_progress">⚡ Đang thực hiện</option>
+              <option value="completed">✅ Đã hoàn thành</option>
+            </select>
+          </div>
+          <div>
+            <div class="flex justify-between mb-1">
+              <label class="font-semibold text-slate-700">Tiến độ hoàn thành (%)</label>
+              <span id="task-progress-val" class="font-bold text-brand-600">0%</span>
+            </div>
+            <input type="range" id="task-progress" min="0" max="100" step="5" value="0" oninput="document.getElementById('task-progress-val').textContent = this.value + '%'"
+              class="w-full accent-brand-600 cursor-pointer mt-1.5" />
+          </div>
+        </div>
+
+        <div class="p-3.5 rounded-xl bg-emerald-50/50 border border-emerald-200/80 space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <label class="font-semibold text-slate-800 flex items-center gap-1.5">
+              <i data-lucide="hard-drive" class="w-4 h-4 text-emerald-600"></i>
+              <span>Tài liệu trên Google Drive / Email cá nhân của bạn</span>
+            </label>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button type="button" onclick="openPersonalGoogleApp('drive')" class="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-semibold flex items-center gap-1 shadow-sm transition">
+                <i data-lucide="folder-up" class="w-3 h-3"></i> Mở Drive của tôi
+              </button>
+              <button type="button" onclick="openPersonalGoogleApp('doc')" class="px-2.5 py-1 rounded-lg bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-semibold flex items-center gap-1 shadow-sm transition">
+                <i data-lucide="file-text" class="w-3 h-3"></i> + Tạo Google Docs
+              </button>
+              <button type="button" onclick="openPersonalGoogleApp('sheet')" class="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-semibold flex items-center gap-1 shadow-sm transition">
+                <i data-lucide="table" class="w-3 h-3"></i> + Tạo trang tính Sheets
+              </button>
+            </div>
+          </div>
+          <div class="relative">
+            <i data-lucide="link" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+            <input type="url" id="task-link" placeholder="Dán link file/thư mục Google Drive cá nhân của bạn vào đây (https://drive.google.com/...)" 
+              class="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <p class="text-[10px] text-slate-500">💡 Hệ thống tự động mở Google Drive / Docs / Sheets theo đúng tài khoản Email của bạn để bạn lưu trữ & thao tác trên chính Drive cá nhân.</p>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Ghi chú xử lý chi tiết / Kết quả bàn giao</label>
+          <textarea id="task-notes" rows="3" placeholder="Ghi rõ các bước đã xử lý, vướng mắc hoặc kết quả đạt được..." 
+            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+        </div>
+
+        <!-- Task Audit History Box (Shows all historical changes made to this specific dossier) -->
+        <div id="task-audit-history-wrapper" class="hidden p-3.5 rounded-xl bg-blue-50/40 border border-blue-200/80 space-y-2">
+          <div class="font-bold text-blue-900 flex items-center gap-1.5 text-xs">
+            <i data-lucide="history" class="w-3.5 h-3.5 text-blue-600"></i>
+            <span>Lịch sử thay đổi của hồ sơ này (Tự động ghi vết)</span>
+          </div>
+          <div id="task-audit-history-list" class="space-y-1.5 max-h-32 overflow-y-auto text-[11px] text-slate-600">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-100 flex items-center justify-between">
+          <span id="draft-autosave-indicator" class="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+            <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> Tự động lưu nháp & lịch sử thao tác
+          </span>
+          <div class="flex items-center space-x-3">
+            <button type="button" onclick="closeTaskModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold">
+              Hủy
+            </button>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold shadow-md shadow-brand-500/20">
+              Lưu Hồ sơ / Công việc
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 2: MANAGER REVIEW & RATING ON SINGLE DOSSIER        -->
+  <!-- ========================================================= -->
+  <div id="review-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-fade-in">
+      <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-4 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="award" class="w-5 h-5"></i>
+          <h3 class="text-sm font-bold">Quản lý Đánh giá & Nhận xét Hồ sơ</h3>
+        </div>
+        <button onclick="closeReviewModal()" class="text-white/80 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form onsubmit="handleReviewSubmit(event)" class="p-6 space-y-4 text-xs">
+        <input type="hidden" id="review-task-id" />
+        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <span id="review-task-code" class="text-[11px] font-mono font-bold text-brand-600">HS-001</span>
+          <p id="review-task-title" class="font-semibold text-slate-800 mt-0.5">Tên hồ sơ</p>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-2">Chấm điểm chất lượng & tiến độ (1 - 5 Sao)</label>
+          <div class="flex items-center space-x-2" id="star-selector">
+            <button type="button" onclick="setReviewStars(1)" class="star-btn p-2 rounded-lg border border-slate-200 hover:bg-blue-50 text-lg">⭐</button>
+            <button type="button" onclick="setReviewStars(2)" class="star-btn p-2 rounded-lg border border-slate-200 hover:bg-blue-50 text-lg">⭐</button>
+            <button type="button" onclick="setReviewStars(3)" class="star-btn p-2 rounded-lg border border-slate-200 hover:bg-blue-50 text-lg">⭐</button>
+            <button type="button" onclick="setReviewStars(4)" class="star-btn p-2 rounded-lg border border-slate-200 hover:bg-blue-50 text-lg">⭐</button>
+            <button type="button" onclick="setReviewStars(5)" class="star-btn p-2 rounded-lg border border-slate-200 hover:bg-blue-50 text-lg">⭐</button>
+            <span id="star-rating-text" class="ml-2 font-bold text-blue-600 text-sm">5 / 5 Sao</span>
+          </div>
+          <input type="hidden" id="review-rating" value="5" />
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1"> Trạng thái phê duyệt của Quản lý</label>
+          <select id="review-approval" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="Đạt yêu cầu">✅ Đạt yêu cầu (Approved)</option>
+            <option value="Xuất sắc">🌟 Xuất sắc (Vượt tiến độ)</option>
+            <option value="Cần bổ sung/chỉnh sửa">⚠️ Cần bổ sung / chỉnh sửa</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Nhận xét / Góp ý chi tiết cho nhân viên</label>
+          <textarea id="review-feedback" rows="3" required placeholder="Nhập nhận xét về chất lượng xử lý hồ sơ, thái độ hoặc lưu ý chỉnh sửa..."
+            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+        </div>
+
+        <div class="pt-3 flex justify-end space-x-2">
+          <button type="button" onclick="closeReviewModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600">Hủy</button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md">Lưu Đánh giá</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 3: MANAGER WEEKLY OVERALL REVIEW                    -->
+  <!-- ========================================================= -->
+  <div id="weekly-review-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-fade-in">
+      <div class="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="shield-check" class="w-5 h-5 text-indigo-400"></i>
+          <h3 class="text-sm font-bold">Đánh giá Tổng kết Tuần (Dành cho Quản lý)</h3>
+        </div>
+        <button onclick="closeWeeklyReviewModal()" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <form onsubmit="handleWeeklyReviewSubmit(event)" class="p-6 space-y-4 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Xếp loại hiệu suất làm việc tuần này</label>
+          <select id="weekly-grade" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold">
+            <option value="A+ (Xuất sắc - Vượt chỉ tiêu)">🏆 Hạng A+ (Xuất sắc - Vượt chỉ tiêu)</option>
+            <option value="A (Tốt - Đúng hạn 100%)">🌟 Hạng A (Tốt - Đảm bảo tiến độ)</option>
+            <option value="B (Khá - Đạt yêu cầu)">✅ Hạng B (Khá - Đạt yêu cầu)</option>
+            <option value="C (Cần cố gắng thêm)">⚠️ Hạng C (Cần cải thiện tiến độ)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Nhận xét tổng quan & Định hướng tuần tới</label>
+          <textarea id="weekly-comment-input" rows="4" required placeholder="Nhận xét về cách phân bổ hồ sơ, tuân thủ deadline và chất lượng công việc trong tuần..."
+            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+        </div>
+        <div class="pt-2 flex justify-end space-x-2">
+          <button type="button" onclick="closeWeeklyReviewModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600">Đóng</button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold">Xác nhận Đánh giá Tuần</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 4: SHARE WORKSPACE WITH MANAGER                     -->
+  <!-- ========================================================= -->
+  <div id="share-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-fade-in">
+      <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="share-2" class="w-5 h-5"></i>
+          <h3 class="text-sm font-bold">Chia sẻ Bảng Công việc & Report cho Quản lý</h3>
+        </div>
+        <button onclick="closeShareModal()" class="text-white/80 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-5 text-xs">
+        <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+          <p class="font-bold flex items-center gap-1.5">
+            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600"></i>
+            Quản lý có thể xem và đánh giá bất cứ khi nào!
+          </p>
+          <p class="text-[11px] text-emerald-700">
+            Sao chép đường link bên dưới và gửi qua Zalo, Email hoặc Teams cho Quản lý. Khi mở link, Quản lý sẽ thấy ngay toàn bộ đầu mục công việc và báo cáo tuần của bạn để chấm điểm.
+          </p>
+        </div>
+
+        <!-- Option 1: Instant Share Link (Contains compressed snapshot or Cloud Workspace ID) -->
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1.5">Đường dẫn chia sẻ trực tiếp (Link xem & đánh giá ngay)</label>
+          <div class="flex items-center space-x-2">
+            <input type="text" id="share-url-input" readonly 
+              class="flex-1 px-3 py-2.5 bg-slate-100 border border-slate-200 rounded-xl font-mono text-[11px] text-slate-600 focus:outline-none" />
+            <button onclick="copyShareLink()" class="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl shrink-0 flex items-center gap-1.5 transition">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span id="copy-btn-text">Sao chép Link</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Option 2: Invite Manager by Email -->
+        <div class="pt-4 border-t border-slate-100">
+          <label class="block font-semibold text-slate-700 mb-1.5">Gửi thông báo báo cáo tuần qua Email cho Quản lý</label>
+          <div class="flex items-center space-x-2">
+            <input type="email" id="manager-email-input" placeholder="quanly@congty.com" 
+              class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            <button onclick="sendEmailToManager()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-xl shrink-0 flex items-center gap-1.5 transition">
+              <i data-lucide="mail" class="w-3.5 h-3.5"></i> Gửi Email
+            </button>
+          </div>
+        </div>
+
+        <!-- Option 3: Backup / Restore JSON File -->
+        <div class="pt-4 border-t border-slate-100 flex items-center justify-between">
+          <div>
+            <p class="font-semibold text-slate-700">Xuất / Nhập file dữ liệu dự phòng (.json)</p>
+            <p class="text-[11px] text-slate-400">Tiện lợi khi chuyển máy hoặc lưu trữ hồ sơ</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button onclick="exportJSONBackup()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium">Tải file .json</button>
+            <label class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium cursor-pointer">
+              Nhập file
+              <input type="file" accept=".json" onchange="importJSONBackup(event)" class="hidden" />
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 5: FIREBASE CLOUD CONFIGURATION                     -->
+  <!-- ========================================================= -->
+  <div id="firebase-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-fade-in">
+      <div class="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="cloud" class="w-5 h-5 text-brand-400"></i>
+          <h3 class="text-sm font-bold">Cấu hình Đồng bộ Đám mây (Firebase Auth + Firestore)</h3>
+        </div>
+        <button onclick="closeFirebaseConfigModal()" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4 text-xs">
+        <p class="text-slate-600 leading-relaxed">
+          Hệ thống hỗ trợ kết nối trực tiếp với <strong>Google Firebase (Miễn phí)</strong> để đồng bộ hóa thời gian thực giữa nhiều máy tính của Nhân viên và Quản lý. Nếu để trống, ứng dụng vẫn hoạt động mượt mà với bộ nhớ trình duyệt & Link chia sẻ thông minh.
+        </p>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Dán chuỗi JSON `firebaseConfig` của bạn vào đây:</label>
+          <textarea id="firebase-config-input" rows="6" placeholder='{
+  "apiKey": "AIzaSy...",
+  "authDomain": "your-app.firebaseapp.com",
+  "projectId": "your-app",
+  "storageBucket": "your-app.appspot.com",
+  "messagingSenderId": "123456",
+  "appId": "1:123456:web:abcdef"
+}' class="w-full p-3 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+        </div>
+
+        <div class="p-3 rounded-xl bg-blue-50 border border-blue-200 text-[11px] text-blue-800 space-y-1">
+          <div class="font-bold">Hướng dẫn lấy mã trong 1 phút:</div>
+          <div>1. Truy cập <a href="https://console.firebase.google.com" target="_blank" class="underline font-semibold">console.firebase.google.com</a> → Tạo Project mới.</div>
+          <div>2. Bật <strong>Authentication</strong> (Email/Password) và <strong>Firestore Database</strong> (Chế độ Test Mode).</div>
+          <div>3. Vào Project Settings → Web App (`</>`) → Copy `firebaseConfig` dán vào ô trên.</div>
+        </div>
+
+        <div class="pt-3 flex items-center justify-between border-t border-slate-100">
+          <button type="button" onclick="clearFirebaseConfig()" class="text-rose-600 hover:underline font-medium">Xóa cấu hình Cloud</button>
+          <div class="space-x-2">
+            <button type="button" onclick="closeFirebaseConfigModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600">Đóng</button>
+            <button type="button" onclick="saveFirebaseConfig()" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold">Lưu & Kết nối Cloud</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 6: REAL EMAIL OTP SENDER CONFIGURATION (1-MINUTE)   -->
+  <!-- ========================================================= -->
+  <div id="otp-mail-config-modal" class="fixed inset-0 z-50 hidden bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden my-8 animate-fade-in">
+      <div class="crimson-top-bar px-6 py-4 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-2.5">
+          <i data-lucide="mail-check" class="w-5 h-5 text-white"></i>
+          <div>
+            <h3 class="text-sm font-bold uppercase">Cài Đặt "Bưu Tá" Gửi Mã OTP Thật Về Hộp Thư Email</h3>
+            <p class="text-[11px] text-rose-100">Cài 1 lần duy nhất — Tự động gửi mã 6 số vào Inbox của Sếp & 4 Nhân viên</p>
+          </div>
+        </div>
+        <button onclick="closeOTPMailConfigModal()" class="text-white/80 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4 text-xs max-h-[82vh] overflow-y-auto">
+        <div class="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 leading-relaxed">
+          💡 <strong>Cơ chế hoạt động:</strong> Bạn dùng 1 tài khoản Gmail làm <strong>"Bưu tá phát mã"</strong> thông qua công cụ miễn phí <strong>Google Apps Script</strong> của chính Google. Khi Sếp hoặc bất kỳ nhân viên nào nhập Email của họ vào màn hình đăng nhập, Google sẽ tự động gửi 1 bức thư chứa 6 số OTP tới thẳng hộp thư của người đó!
+        </div>
+
+        <!-- STEP 1 -->
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-900 text-xs">BƯỚC 1: Sao chép đoạn mã "Bưu tá Google" bên dưới</span>
+            <button type="button" onclick="copyGoogleAppsScriptCode()" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1.5 shadow-sm transition">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span id="btn-copy-gas-text">Sao chép đoạn mã</span>
+            </button>
+          </div>
+          <pre id="gas-code-block" class="p-3 rounded-xl bg-slate-900 text-emerald-400 font-mono text-[11px] overflow-x-auto leading-relaxed select-all">/**
+ * Google Apps Script Web App - WorkFlow Pro
+ * Chức năng:
+ * 1. Gửi email chứa mã OTP 6 chữ số đến hộp thư người dùng
+ * 2. Lưu trữ & Đồng bộ dữ liệu toàn hệ thống (Cloud Database cho Quản lý & Nhân viên)
+ */
+
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "No post data" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    var data = JSON.parse(e.postData.contents);
+
+    // 1. GỬI MÃ OTP ĐĂNG NHẬP QUA EMAIL
+    if (data.action === "send_otp" || (data.otp && !data.action)) {
+      var recipient = data.email || (e.parameter ? e.parameter.email : "");
+      var otpCode = data.otp || (e.parameter ? e.parameter.otp : "");
+      if (recipient && otpCode) {
+        MailApp.sendEmail({
+          to: recipient,
+          name: "Hệ Thống Quản Lý Hồ Sơ (No-Reply)",
+          noReply: true,
+          subject: "[Hệ Thống Hồ Sơ] Mã xác thực OTP đăng nhập: " + otpCode,
+          htmlBody: "&lt;div style='font-family:sans-serif;padding:20px;border:1px solid #ddd;border-radius:12px;max-width:480px'&gt;"
+            + "&lt;h2 style='color:#9e0b22;margin-top:0'&gt;Xác thực Đăng nhập Hệ thống Hồ sơ&lt;/h2&gt;"
+            + "&lt;p&gt;Xin chào &lt;b&gt;" + recipient + "&lt;/b&gt;,&lt;/p&gt;"
+            + "&lt;p&gt;Mã xác thực OTP (6 chữ số) để truy cập bảng công việc của bạn là:&lt;/p&gt;"
+            + "&lt;div style='font-size:28px;font-weight:bold;letter-spacing:6px;color:#1d4ed8;background:#eff6ff;padding:12px 20px;text-align:center;border-radius:8px;margin:16px 0'&gt;" + otpCode + "&lt;/div&gt;"
+            + "&lt;p style='color:#666;font-size:12px'&gt;Đây là email tự động từ hệ thống, vui lòng không phản hồi.&lt;/p&gt;&lt;/div&gt;"
+        });
+      }
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "send_otp" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 2. LƯU DỮ LIỆU ĐỒNG BỘ TOÀN HỆ THỐNG (CLOUD SYNC SAVE)
+    if (data.action === "sync_save") {
+      saveToProperties(data.payload || "{}");
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "sync_save", time: new Date().toISOString() }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 3. TẢI DỮ LIỆU ĐỒNG BỘ MỚI NHẤT (CLOUD SYNC LOAD)
+    if (data.action === "sync_load") {
+      var raw = loadFromProperties();
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "sync_load", payload: raw || null }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet(e) {
+  var raw = loadFromProperties();
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, payload: raw || null }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function saveToProperties(jsonStr) {
+  var props = PropertiesService.getScriptProperties();
+  var chunkSize = 8000;
+  var count = Math.ceil(jsonStr.length / chunkSize);
+  var oldKeys = props.getKeys();
+  for (var i = 0; i < oldKeys.length; i++) {
+    if (oldKeys[i].indexOf("CHUNK_") === 0) {
+      props.deleteProperty(oldKeys[i]);
+    }
+  }
+  props.setProperty("CHUNK_COUNT", count.toString());
+  for (var i = 0; i < count; i++) {
+    props.setProperty("CHUNK_" + i, jsonStr.substring(i * chunkSize, (i + 1) * chunkSize));
+  }
+}
+
+function loadFromProperties() {
+  var props = PropertiesService.getScriptProperties();
+  var countStr = props.getProperty("CHUNK_COUNT");
+  if (!countStr) return null;
+  var count = parseInt(countStr, 10);
+  var str = "";
+  for (var i = 0; i < count; i++) {
+    str += props.getProperty("CHUNK_" + i) || "";
+  }
+  return str;
+}</pre>
+        </div>
+
+        <!-- STEP 2 -->
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 leading-relaxed text-slate-700">
+          <div class="font-bold text-slate-900">BƯỚC 2: Dán vào Google Script & Lấy đường link (Chỉ mất 30 giây)</div>
+          <div>1. Bấm mở <a href="https://script.google.com/home/start" target="_blank" class="text-blue-600 font-bold underline">script.google.com</a> → Nhấn nút <strong>Dự án mới (New project)</strong> ở góc trái.</div>
+          <div>2. Xóa chữ có sẵn, <strong>Dán (Ctrl+V)</strong> đoạn mã vừa sao chép ở Bước 1 vào.</div>
+          <div>3. Nhấn nút màu xanh <strong>Triển khai (Deploy)</strong> ở góc trên bên phải → Chọn <strong>Tùy chọn triển khai mới (New deployment)</strong>.</div>
+          <div>4. Bấm hình bánh răng ⚙️ chọn loại: <strong>Ứng dụng web (Web app)</strong> → Phần <em>"Ai có quyền truy cập (Who has access)"</em> chọn: <strong>Bất kỳ ai (Anyone)</strong> → Nhấn <strong>Triển khai (Deploy)</strong> & cấp quyền Gmail.</div>
+          <div>5. Copy đường link <strong>URL ứng dụng web (`https://script.google.com/macros/s/.../exec`)</strong> dán vào Bước 3 bên dưới.</div>
+        </div>
+
+        <!-- STEP 3 -->
+        <div class="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-3">
+          <label class="block font-bold text-slate-900">BƯỚC 3: Dán đường link Web App URL (`https://script.google.com/macros/s/.../exec`) vào đây:</label>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input type="url" id="otp-webhook-url-input" placeholder="https://script.google.com/macros/s/AKfycb.../exec" 
+              class="flex-1 px-3.5 py-2.5 bg-white border border-blue-300 rounded-xl font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-600" />
+            <button type="button" onclick="testSendRealOTPEmail()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shrink-0 transition">
+              ✉️ Gửi thử OTP
+            </button>
+          </div>
+          <p class="text-[11px] text-slate-600">
+            Sau khi lưu, bất kỳ ai (Sếp hoặc 4 nhân viên) nhập email của họ sẽ nhận được thư OTP thật trong Inbox, đồng thời mã hiển thị thử nghiệm trên màn hình sẽ tự động ẩn đi!
+          </p>
+        </div>
+
+        <div class="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <button type="button" onclick="clearOTPMailConfig()" class="text-rose-600 hover:underline font-medium">Tắt (Về chế độ Demo)</button>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" onclick="exportAllInOneWithEmbeddedOTP()" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1.5 shadow-sm transition" title="Tải xuống 1 file HTML đã gắn sẵn Bưu tá này để gửi cho Sếp & 4 Nhân viên dùng ngay">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Tải file HTML gửi cho Sếp & 4 NV</span>
+            </button>
+            <button type="button" onclick="saveOTPMailConfig()" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold shadow-sm transition">
+              Lưu & Kích hoạt ngay
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 7: PRE-DECLARED EMAIL WHITELIST & ROLE LOCK         -->
+  <!-- ========================================================= -->
+  <div id="whitelist-modal" class="fixed inset-0 z-50 hidden bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden my-8 animate-fade-in">
+      <div class="crimson-top-bar px-6 py-4 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-2.5">
+          <i data-lucide="shield-check" class="w-5 h-5 text-white"></i>
+          <div>
+            <h3 class="text-sm font-bold uppercase">Khai Báo Danh Sách Email Được Phép Truy Cập (Whitelist)</h3>
+            <p class="text-[11px] text-rose-100">Phân quyền cứng theo Email: Nhân viên không thể vào phần của Quản lý, Email lạ bị chặn 100%</p>
+          </div>
+        </div>
+        <button onclick="closeWhitelistModal()" class="text-white/80 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4 text-xs max-h-[82vh] overflow-y-auto">
+        <div class="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 leading-relaxed">
+          🔒 <strong>Quy tắc bảo mật:</strong> Chỉ những địa chỉ Email có trong bảng dưới đây mới nhận được mã OTP để đăng nhập.
+          <ul class="list-disc list-inside mt-1 space-y-0.5 text-[11px]">
+            <li>Email khai báo là <strong>👔 Quản lý (Sếp)</strong>: Khi đăng nhập sẽ vào thẳng bảng Giám sát toàn đội & chấm điểm.</li>
+            <li>Email khai báo là <strong>👨‍💻 Nhân viên</strong>: Khi đăng nhập chỉ vào được bảng cá nhân của chính mình (khóa hoàn toàn quyền xem của Sếp và nhân viên khác).</li>
+          </ul>
+        </div>
+
+        <!-- Add New Authorized Email Form -->
+        <form onsubmit="handleAddWhitelistEmail(event)" class="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+          <div class="font-bold text-slate-900 flex items-center gap-1.5">
+            <i data-lucide="user-plus" class="w-4 h-4 text-brand-600"></i>
+            <span>Thêm / Khai báo Email được phép truy cập:</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+            <div class="sm:col-span-5">
+              <label class="block text-[11px] font-semibold text-slate-600 mb-1">Địa chỉ Email *</label>
+              <input type="email" id="wl-email-input" required placeholder="VD: sep@vaschools.edu.vn" 
+                class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-600" />
+            </div>
+            <div class="sm:col-span-4">
+              <label class="block text-[11px] font-semibold text-slate-600 mb-1">Họ tên hiển thị *</label>
+              <input type="text" id="wl-name-input" required placeholder="VD: Trần Quốc Bảo" 
+                class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-600" />
+            </div>
+            <div class="sm:col-span-3">
+              <label class="block text-[11px] font-semibold text-slate-600 mb-1">Phân quyền cố định *</label>
+              <select id="wl-role-input" class="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-600">
+                <option value="employee">👨‍💻 Nhân viên</option>
+                <option value="manager">👔 Quản lý (Sếp)</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex justify-end">
+            <button type="submit" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold flex items-center gap-1.5 shadow-sm transition">
+              <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+              <span>Thêm vào Danh sách Cấp quyền</span>
+            </button>
+          </div>
+        </form>
+
+        <!-- Whitelist Table -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
+                <th class="py-2.5 px-3">Email được phép vào</th>
+                <th class="py-2.5 px-3">Họ tên nhân sự</th>
+                <th class="py-2.5 px-3">Quyền hạn cố định</th>
+                <th class="py-2.5 px-3 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="whitelist-table-body" class="divide-y divide-slate-200">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <button type="button" onclick="restoreDefaultWhitelist()" class="text-blue-700 hover:underline font-semibold flex items-center gap-1">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+            <span>Khôi phục 4 Email ban đầu (2 Sếp + 2 NV)</span>
+          </button>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="exportAllInOneWithEmbeddedOTP()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1.5 shadow-sm transition">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Xuất file HTML đã khóa Danh sách này</span>
+            </button>
+            <button type="button" onclick="closeWhitelistModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold transition">
+              Đóng
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 8: RECYCLE BIN & DATA RESTORATION (THÙNG RÁC & KHÔI PHỤC) -->
+  <!-- ========================================================= -->
+  <div id="trash-modal" class="fixed inset-0 z-50 hidden bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden my-8 animate-fade-in">
+      <div class="bg-gradient-to-r from-slate-900 to-slate-800 px-6 py-4 text-white flex items-center justify-between">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold uppercase">Thùng Rác & Khôi Phục Dữ Liệu (Dành Cho Cấp Quản Lý)</h3>
+            <p class="text-[11px] text-slate-300">Quản lý có thể xem lại và khôi phục 100% hồ sơ, công việc hoặc tài khoản đã xóa</p>
+          </div>
+        </div>
+        <button onclick="closeTrashModal()" class="text-white/80 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4 text-xs max-h-[80vh] overflow-y-auto">
+        <div class="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3">
+          <div class="space-y-0.5">
+            <p class="font-bold flex items-center gap-1.5 text-amber-800">
+              <i data-lucide="shield-alert" class="w-4 h-4 text-amber-600"></i>
+              Bảo vệ an toàn dữ liệu: Không bao giờ mất vĩnh viễn!
+            </p>
+            <p class="text-[11px] text-amber-700">
+              Mọi hồ sơ, đầu mục cá nhân hoặc tài khoản email khi bấm "Xóa" đều được chuyển vào đây. Bạn có thể nhấn <strong>"Khôi phục"</strong> bất kỳ lúc nào để đưa trở lại hệ thống.
+            </p>
+          </div>
+          <button type="button" onclick="emptyTrashConfirm()" class="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-semibold shrink-0 transition">
+            Dọn sạch thùng rác
+          </button>
+        </div>
+
+        <!-- Filter tabs inside trash: All / Dossiers / Ad-hoc / Whitelist -->
+        <div class="flex items-center gap-2 border-b border-slate-200 pb-2">
+          <button type="button" onclick="filterTrash('all')" id="trash-filter-all" class="px-3 py-1 rounded-lg text-xs font-bold bg-slate-900 text-white">Tất cả (<span id="trash-cnt-all">0</span>)</button>
+          <button type="button" onclick="filterTrash('task')" id="trash-filter-task" class="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200">Hồ sơ (<span id="trash-cnt-task">0</span>)</button>
+          <button type="button" onclick="filterTrash('adhoc')" id="trash-filter-adhoc" class="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200">Việc Nhật ký (<span id="trash-cnt-adhoc">0</span>)</button>
+          <button type="button" onclick="filterTrash('whitelist')" id="trash-filter-whitelist" class="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200">Tài khoản Email (<span id="trash-cnt-whitelist">0</span>)</button>
+        </div>
+
+        <!-- Trash Table -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
+                <th class="py-2.5 px-3">Loại mục</th>
+                <th class="py-2.5 px-3">Mã & Nội dung đã xóa</th>
+                <th class="py-2.5 px-3">Nhân sự liên quan</th>
+                <th class="py-2.5 px-3">Thời gian xóa</th>
+                <th class="py-2.5 px-3 text-right">Hành động</th>
+              </tr>
+            </thead>
+            <tbody id="trash-table-body" class="divide-y divide-slate-200">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pt-2 flex justify-end">
+          <button type="button" onclick="closeTrashModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold transition">
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+
+  <!-- Firebase SDKs (Compat version for clean standalone browser usage) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <!-- Main Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
