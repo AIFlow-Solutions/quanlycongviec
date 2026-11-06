@@ -330,7 +330,7 @@ async function syncSaveToCloud() {
       const res = await resp.json();
       if (res && res.ok) {
         const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-        setSyncIndicator(☁️ Đã đồng bộ Cloud (), 'bg-emerald-400');
+        setSyncIndicator('☁️ Đã đồng bộ Cloud (' + timeStr + ')', 'bg-emerald-400');
       } else {
         setSyncIndicator('Đã lưu máy (Cloud chờ kết nối)', 'bg-emerald-400');
       }
@@ -401,7 +401,7 @@ async function syncLoadFromCloud(silent = false) {
       syncSaveToCloud();
     }
     const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    setSyncIndicator(☁️ Đã đồng bộ Cloud (), 'bg-emerald-400');
+    setSyncIndicator('☁️ Đã đồng bộ Cloud (' + timeStr + ')', 'bg-emerald-400');
   } catch (err) {
     console.warn('Sync load warning:', err);
     if (!silent) {
@@ -439,7 +439,7 @@ function setSyncIndicator(text, dotColorClass) {
   const dot = document.getElementById('sidebar-sync-dot');
   const label = document.getElementById('sidebar-sync-text');
   if (dot && label) {
-    dot.className = w-2 h-2 rounded-full ;
+    dot.className = 'w-2 h-2 rounded-full ' + (dotColorClass || '');
     label.textContent = text;
   }
   const topText = document.getElementById('top-bar-sync-text');
