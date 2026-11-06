@@ -267,6 +267,40 @@ function cleanForeignLogs() {
   });
 }
 
+function ensureEmployeeWorkspaceMatched() {
+  if (!currentUser || currentUser.role !== 'employee' || !currentUser.email) return;
+  const cleanEmail = currentUser.email.trim().toLowerCase();
+  const myEntry = Object.entries(teamWorkspaces).find(
+    ([, ws]) => (ws.ownerEmail || '').trim().toLowerCase() === cleanEmail
+  );
+  if (myEntry) {
+    activeEmployeeId = myEntry[0];
+    workspaceData = myEntry[1];
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
+  } else {
+    const wsId = 'ws_' + btoa(encodeURIComponent(cleanEmail)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+    const newEmpId = 'emp_' + wsId;
+    teamWorkspaces[newEmpId] = {
+      empId: newEmpId,
+      ownerName: currentUser.name || cleanEmail,
+      ownerEmail: cleanEmail,
+      position: 'Chuyên viên Pháp chế & Hồ sơ',
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+      weeklyReviews: {},
+      employeeNotes: {},
+      adhocTasks: [],
+      activityLogs: []
+    };
+    activeEmployeeId = newEmpId;
+    workspaceData = teamWorkspaces[newEmpId];
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
+    saveWorkspaceData();
+  }
+}
+
 function loadWorkspaceFromLocal() {
   const savedTeam = localStorage.getItem(STORAGE_KEYS.TEAM_ROSTER);
   const savedActiveId = localStorage.getItem(STORAGE_KEYS.ACTIVE_EMP_ID);
@@ -276,6 +310,7 @@ function loadWorkspaceFromLocal() {
       cleanForeignLogs();
       activeEmployeeId = (savedActiveId && teamWorkspaces[savedActiveId]) ? savedActiveId : Object.keys(teamWorkspaces)[0];
       workspaceData = teamWorkspaces[activeEmployeeId];
+      ensureEmployeeWorkspaceMatched();
       if (workspaceData) {
         if (!Array.isArray(workspaceData.tasks)) workspaceData.tasks = [];
         if (!Array.isArray(workspaceData.adhocTasks)) workspaceData.adhocTasks = [];
@@ -287,6 +322,7 @@ function loadWorkspaceFromLocal() {
     }
   }
   seedDefaultWorkspace();
+  ensureEmployeeWorkspaceMatched();
 }
 
 function generateInitialLogsFromTasks(tasks) {
@@ -430,6 +466,7 @@ async function syncLoadFromCloud(silent = false) {
         if (shouldUpdate) {
           teamWorkspaces = cloudData.teamWorkspaces;
           cleanForeignLogs();
+          ensureEmployeeWorkspaceMatched();
 
           if (teamWorkspaces[activeEmployeeId]) {
             workspaceData = teamWorkspaces[activeEmployeeId];
@@ -1267,6 +1304,8 @@ function handleVerifyOTP(e) {
       activeEmployeeId = newEmpId;
       workspaceData = teamWorkspaces[newEmpId];
     }
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
   }
 
   // Ghi nhận lịch sử đăng nhập bằng OTP (Chỉ ghi vào hồ sơ cá nhân nếu là Nhân viên)
@@ -1409,7 +1448,10 @@ function switchTab(tabId) {
     if (btn) btn.classList.toggle('active', t === tabId);
   });
 
-  const empName = workspaceData.ownerName || 'Nhân viên';
+  ensureEmployeeWorkspaceMatched();
+  const empName = (currentUser && currentUser.role === 'employee')
+    ? (currentUser.name || currentUser.email)
+    : (workspaceData ? (workspaceData.ownerName || 'Nhân viên') : 'Nhân viên');
   const titles = {
     overview: [`Tổng quan & Phân việc: ${empName}`, 'Theo dõi tiến độ hồ sơ tiếp nhận, deadline và đánh giá từ quản lý'],
     dossiers: [`Quản lý Tiếp nhận & Hồ sơ: ${empName}`, 'Danh mục chi tiết các hồ sơ, thời hạn cụ thể, link tài liệu và kết quả thẩm định'],
