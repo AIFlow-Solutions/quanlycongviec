@@ -1,4 +1,4 @@
-﻿/**
+/**
  * WorkFlow Pro - Employee Dossier & Weekly Task Management System
  * Supports Hybrid Cloud (Firebase Auth + Firestore) + Instant Smart Share Links & Local Persistence
  */
@@ -955,106 +955,21 @@ function closeOTPMailConfigModal() {
 }
 
 function copyGoogleAppsScriptCode() {
-  const code = \/**
- * Google Apps Script Web App - WorkFlow Pro
- * Chuc nang:
- * 1. Gui email chua ma OTP 6 chu so den hop thu nguoi dung
- * 2. Luu tru & Dong bo du lieu toan he thong (Cloud Database cho Quan ly & Nhan vien)
- */
-
-function doPost(e) {
-  try {
-    if (!e || !e.postData || !e.postData.contents) {
-      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "No post data" }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-    var data = JSON.parse(e.postData.contents);
-
-    // 1. GUI MA OTP XAC THUC QUA EMAIL
-    if (data.action === "send_otp" || (data.otp && !data.action)) {
-      var recipient = data.email || (e.parameter ? e.parameter.email : "");
-      var otpCode = data.otp || (e.parameter ? e.parameter.otp : "");
-      if (recipient && otpCode) {
-        MailApp.sendEmail({
-          to: recipient,
-          name: "Há»‡ Thá»‘ng Quáº£n LÃ½ Há»“ SÆ¡ (No-Reply)",
-          noReply: true,
-          subject: "[Há»‡ Thá»‘ng Há»“ SÆ¡] MÃ£ xÃ¡c thá»±c OTP Ä‘Äƒng nháº­p: " + otpCode,
-          htmlBody: "<div style='font-family:sans-serif;padding:20px;border:1px solid #ddd;border-radius:12px;max-width:480px'>"
-            + "<h2 style='color:#9e0b22;margin-top:0'>XÃ¡c thá»±c ÄÄƒng nháº­p Há»‡ thá»‘ng Há»“ sÆ¡</h2>"
-            + "<p>Xin chÃ o <b>" + recipient + "</b>,</p>"
-            + "<p>MÃ£ xÃ¡c thá»±c OTP (6 chá»¯ sá»‘) Ä‘á»ƒ truy cáº­p báº£ng cÃ´ng viá»‡c cá»§a báº¡n lÃ :</p>"
-            + "<div style='font-size:28px;font-weight:bold;letter-spacing:6px;color:#1d4ed8;background:#eff6ff;padding:12px 20px;text-align:center;border-radius:8px;margin:16px 0'>" + otpCode + "</div>"
-            + "<p style='color:#666;font-size:12px'>ÄÃ¢y lÃ  email tá»± Ä‘á»™ng tá»« há»‡ thá»‘ng, vui lÃ²ng khÃ´ng pháº£n há»“i.</p></div>"
-        });
-      }
-      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "send_otp" }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // 2. LUU DU LIEU DONG BO CLOUD TOAN HE THONG (SYNC SAVE)
-    if (data.action === "sync_save") {
-      saveToProperties(data.payload || "{}");
-      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "sync_save", time: new Date().toISOString() }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // 3. TAI DU LIEU DONG BO CLOUD MOI NHAT (SYNC LOAD)
-    if (data.action === "sync_load") {
-      var raw = loadFromProperties();
-      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "sync_load", payload: raw || null }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    return ContentService.createTextOutput(JSON.stringify({ ok: true }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+  const codeBlock = document.getElementById('gas-code-block');
+  const code = codeBlock ? codeBlock.textContent : '';
+  if (!code) {
+    showToast('Khong tim thay ma Script!', 'error');
+    return;
   }
-}
-
-function doGet(e) {
-  var raw = loadFromProperties();
-  return ContentService.createTextOutput(JSON.stringify({ ok: true, payload: raw || null }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function saveToProperties(jsonStr) {
-  var props = PropertiesService.getScriptProperties();
-  var chunkSize = 8000;
-  var count = Math.ceil(jsonStr.length / chunkSize);
-  var oldKeys = props.getKeys();
-  for (var i = 0; i < oldKeys.length; i++) {
-    if (oldKeys[i].indexOf("CHUNK_") === 0) {
-      props.deleteProperty(oldKeys[i]);
-    }
-  }
-  props.setProperty("CHUNK_COUNT", count.toString());
-  for (var i = 0; i < count; i++) {
-    props.setProperty("CHUNK_" + i, jsonStr.substring(i * chunkSize, (i + 1) * chunkSize));
-  }
-}
-
-function loadFromProperties() {
-  var props = PropertiesService.getScriptProperties();
-  var countStr = props.getProperty("CHUNK_COUNT");
-  if (!countStr) return null;
-  var count = parseInt(countStr, 10);
-  var str = "";
-  for (var i = 0; i < count; i++) {
-    str += props.getProperty("CHUNK_" + i) || "";
-  }
-  return str;
-}
-\;
   navigator.clipboard.writeText(code).then(() => {
     const label = document.getElementById('btn-copy-gas-text');
-    if (label) label.textContent = 'ÄÃ£ sao chÃ©p!';
-    showToast('ÄÃ£ sao chÃ©p mÃ£ Google Apps Script hoÃ n chá»‰nh (OTP + Cloud Database)!', 'success');
+    if (label) label.textContent = 'Da sao chep!';
+    showToast('Da sao chep ma Google Apps Script (OTP + Cloud Database)!', 'success');
     setTimeout(() => {
-      if (label) label.textContent = 'Sao chÃ©p Ä‘oáº¡n mÃ£';
+      if (label) label.textContent = 'Sao chep doan ma';
     }, 2500);
+  }).catch(() => {
+    showToast('Vui long sao chep truc tiep tren khung man hinh.', 'info');
   });
 }
 
