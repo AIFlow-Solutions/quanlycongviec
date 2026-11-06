@@ -251,12 +251,29 @@ function generateSeedAdhocTasks(ownerName) {
   return [];
 }
 
+function cleanForeignLogs() {
+  if (!teamWorkspaces || typeof teamWorkspaces !== 'object') return;
+  Object.values(teamWorkspaces).forEach(ws => {
+    if (ws && Array.isArray(ws.activityLogs)) {
+      const owner = (ws.ownerEmail || '').trim().toLowerCase();
+      ws.activityLogs = ws.activityLogs.filter(log => {
+        if (log.type === 'login') {
+          const act = (log.actor || '').trim().toLowerCase();
+          return !act || act === owner;
+        }
+        return true;
+      });
+    }
+  });
+}
+
 function loadWorkspaceFromLocal() {
   const savedTeam = localStorage.getItem(STORAGE_KEYS.TEAM_ROSTER);
   const savedActiveId = localStorage.getItem(STORAGE_KEYS.ACTIVE_EMP_ID);
   if (savedTeam) {
     try {
       teamWorkspaces = JSON.parse(savedTeam);
+      cleanForeignLogs();
       activeEmployeeId = (savedActiveId && teamWorkspaces[savedActiveId]) ? savedActiveId : Object.keys(teamWorkspaces)[0];
       workspaceData = teamWorkspaces[activeEmployeeId];
       if (workspaceData) {
@@ -412,6 +429,7 @@ async function syncLoadFromCloud(silent = false) {
 
         if (shouldUpdate) {
           teamWorkspaces = cloudData.teamWorkspaces;
+          cleanForeignLogs();
 
           if (teamWorkspaces[activeEmployeeId]) {
             workspaceData = teamWorkspaces[activeEmployeeId];
@@ -1251,24 +1269,26 @@ function handleVerifyOTP(e) {
     }
   }
 
-  // Ghi nhận lịch sử đăng nhập bằng OTP
-  recordJournalLog(
-    'login',
-    'OTP-AUTH',
-    `Đăng nhập xác thực OTP thành công (${email})`,
-    `Xác thực bảo mật qua mã OTP gửi về email ${email} — Phân quyền: ${getRoleBadgeText(role, email)}`
-  );
+  // Ghi nhận lịch sử đăng nhập bằng OTP (Chỉ ghi vào hồ sơ cá nhân nếu là Nhân viên)
+  if (role === 'employee' && workspaceData) {
+    recordJournalLog(
+      'login',
+      'OTP-AUTH',
+      `Đăng nhập xác thực OTP thành công (${email})`,
+      `Xác thực bảo mật qua mã OTP gửi về email ${email} — Phân quyền: ${getRoleBadgeText(role, email)}`
+    );
+    saveWorkspaceData();
+  }
 
   if (fbDb) {
     subscribeToFirestoreWorkspace(wsId);
   }
 
-  saveWorkspaceData();
   document.getElementById('auth-screen').classList.add('hidden');
   backToEmailStep();
   updateUserUI();
   if (isManager(currentUser)) {
-    switchTab('team');
+    switchManagerSection('journal');
     syncLoadFromCloud(false);
   } else {
     switchTab('overview');
@@ -1375,9 +1395,7 @@ function openPersonalGoogleApp(appType) {
 // 6. NAVIGATION & WEEK FILTERING
 // ==========================================
 function switchTab(tabId) {
-  if (currentUser.role === 'manager') {
-    tabId = 'team';
-  } else if (tabId === 'team') {
+  if (tabId === 'team' && !isManager(currentUser)) {
     showToast('⛔ Tài khoản Nhân viên không có quyền truy cập trang Giám sát của Quản lý!', 'error');
     tabId = 'overview';
   }
@@ -1401,13 +1419,45 @@ function switchTab(tabId) {
     team: ['Cổng Giám Sát Cấp Quản Lý', 'Báo cáo Infographic Ngày / Tuần & Nhật ký theo dõi hoạt động nhân viên']
   };
 
-  document.getElementById('page-title').textContent = titles[tabId][0];
-  document.getElementById('page-subtitle').textContent = titles[tabId][1];
+  if (document.getElementById('page-title') && titles[tabId]) {
+    document.getElementById('page-title').textContent = titles[tabId][0];
+  }
+  if (document.getElementById('page-subtitle') && titles[tabId]) {
+    document.getElementById('page-subtitle').textContent = titles[tabId][1];
+  }
+
+  const sharedBanner = document.getElementById('shared-banner');
+  const sharedBannerText = document.getElementById('shared-banner-text');
+  if (sharedBanner) {
+    if (isManager(currentUser) && tabId !== 'team') {
+      sharedBanner.classList.remove('hidden');
+      if (sharedBannerText) {
+        sharedBannerText.textContent = `👁️ Quản lý đang soi chi tiết Bàn làm việc của: ${empName}. Bạn có thể xem hồ sơ hoặc chấm điểm trực tiếp.`;
+      }
+      const exitBtn = sharedBanner.querySelector('button');
+      if (exitBtn) {
+        exitBtn.textContent = 'Quay lại Cổng Giám Sát Quản Lý';
+        exitBtn.onclick = () => switchManagerSection('journal');
+      }
+    } else if (!isViewingShared) {
+      sharedBanner.classList.add('hidden');
+    }
+  }
 
   renderAll();
 }
 
 function switchManagerSection(secId) {
+  // Đảm bảo tab team hiển thị
+  activeTab = 'team';
+  const tabs = ['overview', 'dossiers', 'schedule', 'report', 'journal', 'team'];
+  tabs.forEach(t => {
+    const sec = document.getElementById(`tab-${t}`);
+    const btn = document.getElementById(`nav-${t}`);
+    if (sec) sec.classList.toggle('hidden', t !== 'team');
+    if (btn) btn.classList.toggle('active', t === 'team');
+  });
+
   activeManagerSection = secId;
   const sections = ['infographic', 'journal', 'grading'];
   sections.forEach(s => {
@@ -1437,6 +1487,14 @@ function switchManagerSection(secId) {
   if (subEl && titles[secId]) subEl.textContent = titles[secId][1];
 
   renderTeamTab();
+}
+
+function handleBackFromDossiers() {
+  if (isManager(currentUser)) {
+    switchManagerSection(activeManagerSection || 'journal');
+  } else {
+    switchTab('overview');
+  }
 }
 
 function setManagerDailyToday() {
@@ -1566,25 +1624,49 @@ function renderAll() {
 function renderHeaderEmployeeSwitcher() {
   const sel = document.getElementById('header-employee-switcher');
   if (!sel) return;
-  const entries = Object.entries(teamWorkspaces);
-  sel.innerHTML = entries.map(([empId, ws]) => `
-    <option value="${empId}" ${empId === activeEmployeeId ? 'selected' : ''}>
-      ${escapeHtml(ws.ownerName)} (${(ws.tasks || []).length} hồ sơ)
-    </option>
-  `).join('');
+  const isCurrentUserMod = isMod(currentUser);
+  let entries = Object.entries(teamWorkspaces);
+  if (isCurrentUserMod) {
+    entries = entries.filter(([, ws]) => (ws.ownerEmail || '').toLowerCase() !== 'thienlt@vaschools.edu.vn');
+  }
+  const teamFilter = document.getElementById('team-filter-emp');
+  const currentSelected = (teamFilter && teamFilter.value) || activeEmployeeId || 'all';
+
+  sel.innerHTML = `<option value="all" ${currentSelected === 'all' ? 'selected' : ''}>Tất cả nhân sự (${entries.length} NV)</option>` +
+    entries.map(([empId, ws]) => `
+      <option value="${empId}" ${empId === currentSelected ? 'selected' : ''}>
+        ${escapeHtml(ws.ownerName)} (${(ws.tasks || []).length} hồ sơ)
+      </option>
+    `).join('');
 }
 
 function switchActiveEmployeeWorkspace(empId, targetTab = null) {
+  const teamFilter = document.getElementById('team-filter-emp');
+  if (teamFilter) teamFilter.value = empId;
+
+  if (empId === 'all') {
+    if (activeTab === 'team') {
+      renderTeamTab();
+    } else {
+      switchTab('team');
+    }
+    showToast('Đang xem dữ liệu của toàn bộ nhân sự', 'info');
+    return;
+  }
+
   if (!teamWorkspaces[empId]) return;
   activeEmployeeId = empId;
   workspaceData = teamWorkspaces[empId];
   localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+
   if (targetTab) {
     switchTab(targetTab);
+  } else if (isManager(currentUser) && activeTab === 'team') {
+    renderTeamTab();
   } else {
-    switchTab(activeTab === 'team' ? 'overview' : activeTab);
+    renderAll();
   }
-  showToast(`Đang xem bảng công việc của nhân viên: ${workspaceData.ownerName}`, 'info');
+  showToast(`Đang lọc theo nhân sự: ${workspaceData.ownerName}`, 'info');
 }
 
 function renderKPICards(weekTasks) {
@@ -2260,7 +2342,21 @@ function renderJournalTab() {
   }
 
   // 2. Render Chronological Activity Timeline
-  const logs = workspaceData.activityLogs || [];
+  const rawLogs = workspaceData.activityLogs || [];
+  const empEmail = (currentUser.email || '').trim().toLowerCase();
+
+  // Nhân viên chỉ thấy các hoạt động của chính mình và sao đánh giá của Quản lý:
+  const logs = isManager(currentUser)
+    ? rawLogs
+    : rawLogs.filter(log => {
+        if (log.type === 'login') {
+          return (log.actor || '').trim().toLowerCase() === empEmail;
+        }
+        if (log.type === 'reviewed') return true;
+        const act = (log.actor || '').trim().toLowerCase();
+        return !act || act === empEmail;
+      });
+
   const totalBadge = document.getElementById('journal-total-badge');
   if (totalBadge) totalBadge.textContent = `${logs.length} hoạt động đã lưu`;
 
@@ -2368,10 +2464,16 @@ function renderTeamTab() {
 
   // Filter dropdown by employee
   const filterSelect = document.getElementById('team-filter-emp');
-  const currentFilterVal = filterSelect ? filterSelect.value : 'all';
+  let currentFilterVal = filterSelect ? filterSelect.value : 'all';
   if (filterSelect) {
-    filterSelect.innerHTML = `<option value="all">Tất cả nhân viên (${entries.length} NV)</option>` +
+    filterSelect.innerHTML = `<option value="all">Tất cả nhân sự (${entries.length} NV)</option>` +
       entries.map(([empId, ws]) => `<option value="${empId}" ${empId === currentFilterVal ? 'selected' : ''}>${escapeHtml(ws.ownerName)}</option>`).join('');
+    if (currentFilterVal !== 'all' && !entries.some(([empId]) => empId === currentFilterVal)) {
+      currentFilterVal = 'all';
+      filterSelect.value = 'all';
+    }
+    const headerSel = document.getElementById('header-employee-switcher');
+    if (headerSel) headerSel.value = currentFilterVal;
   }
 
   // Calculate Department-Wide Aggregates for the Week
@@ -2737,6 +2839,7 @@ function renderTeamTab() {
                 <span class="text-[10px] text-slate-400 font-mono">(${escapeHtml(item.empEmail)})</span>
                 <span class="text-[10px] font-semibold px-2 py-0.5 rounded border ${meta.color}">${meta.badge}</span>
                 <span class="font-mono text-[11px] font-bold text-brand-700">${escapeHtml(item.code)}</span>
+                ${item.actor ? `<span class="text-[10px] text-slate-500 font-medium">Bởi: <strong class="text-slate-700">${escapeHtml(item.actor)}</strong></span>` : ''}
               </div>
               <p class="font-semibold text-slate-800 mt-1">${escapeHtml(item.title)}</p>
               ${item.detail ? `<p class="text-[11px] text-slate-500">${escapeHtml(item.detail)}</p>` : ''}
