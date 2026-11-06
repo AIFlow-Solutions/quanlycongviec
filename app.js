@@ -26,7 +26,8 @@ let DEFAULT_WHITELIST = [
   { email: 'thienlt@vaschools.edu.vn', name: 'Super Admin (thienlt@vaschools.edu.vn)', role: 'admin' },
   { email: 'vuongvq@vaschools.edu.vn', name: 'Quản lý / Mod (vuongvq@vaschools.edu.vn)', role: 'mod' },
   { email: 'oanhhtl@hcm.vaschools.edu.vn', name: 'Nhân viên (oanhhtl@hcm.vaschools.edu.vn)', role: 'employee' },
-  { email: 'nhilt@vaschools.edu.vn', name: 'Lê Thị Nhi (nhilt@vaschools.edu.vn)', role: 'employee' }
+  { email: 'nhilt@vaschools.edu.vn', name: 'Lê Thị Nhi (nhilt@vaschools.edu.vn)', role: 'employee' },
+  { email: 'thienvt4567@gmail.com', name: 'Thiện Lee', role: 'employee' }
 ];
 
 function isAdmin(user = currentUser) {
@@ -391,6 +392,13 @@ async function syncLoadFromCloud(silent = false) {
     if (res && res.ok && res.payload) {
       const cloudData = typeof res.payload === 'string' ? JSON.parse(res.payload) : res.payload;
       if (cloudData && cloudData.teamWorkspaces && typeof cloudData.teamWorkspaces === 'object') {
+        if (Array.isArray(cloudData.whitelist) && cloudData.whitelist.length > 0) {
+          saveWhitelist(cloudData.whitelist, false);
+        }
+        if (Array.isArray(cloudData.trashItems)) {
+          saveTrashItems(cloudData.trashItems, false);
+        }
+
         const localTeam = localStorage.getItem(STORAGE_KEYS.TEAM_ROSTER);
         let shouldUpdate = true;
         if (localTeam) {
@@ -404,12 +412,6 @@ async function syncLoadFromCloud(silent = false) {
 
         if (shouldUpdate) {
           teamWorkspaces = cloudData.teamWorkspaces;
-          if (Array.isArray(cloudData.whitelist) && cloudData.whitelist.length > 0) {
-            saveWhitelist(cloudData.whitelist, false);
-          }
-          if (Array.isArray(cloudData.trashItems)) {
-            saveTrashItems(cloudData.trashItems, false);
-          }
 
           if (teamWorkspaces[activeEmployeeId]) {
             workspaceData = teamWorkspaces[activeEmployeeId];
@@ -995,8 +997,24 @@ async function handleRequestOTP(e) {
     return;
   }
 
-  // KIỂM TRA EMAIL TRONG DANH SÁCH KHAI BÁO TRƯỚC (WHITELIST)
-  const authorizedAccount = findWhitelistedAccount(email);
+  // 1. KIỂM TRA EMAIL TRONG DANH SÁCH LOCAL
+  let authorizedAccount = findWhitelistedAccount(email);
+
+  // 2. NẾU CHƯA CÓ TRÊN MÁY: TRUY VẤN NGAY TỪ GOOGLE CLOUD ĐỂ LẤY DANH SÁCH MỚI NHẤT DO ADMIN VỪA CẤP
+  if (!authorizedAccount && getOTPWebhookUrl()) {
+    const btnText = document.getElementById('btn-send-otp-text');
+    if (btnText) btnText.textContent = 'Đang kiểm tra quyền từ Cloud...';
+    try {
+      await syncLoadFromCloud(true);
+      authorizedAccount = findWhitelistedAccount(email);
+    } catch (err) {
+      console.warn('Sync load check error:', err);
+    } finally {
+      if (btnText) btnText.textContent = 'Nhận mã xác thực OTP qua Email';
+    }
+  }
+
+  // 3. NẾU VẪN KHÔNG CÓ TRÊN CẢ CLOUD LẪN MÁY THÌ MỚI BÁO TỪ CHỐI
   if (!authorizedAccount) {
     const errBox = document.getElementById('auth-whitelist-error');
     const errText = document.getElementById('auth-whitelist-error-text');
