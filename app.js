@@ -1,4 +1,4 @@
-﻿/**
+/**
  * WorkFlow Pro - Employee Dossier & Weekly Task Management System
  * Supports Hybrid Cloud (Firebase Auth + Firestore) + Instant Smart Share Links & Local Persistence
  */
@@ -7,27 +7,52 @@
 // 1. STATE & CONFIGURATION
 // ==========================================
 const STORAGE_KEYS = {
-  USER: 'wf_pro_current_user_v4',
-  DATA: 'wf_pro_workspace_data_v4',
-  TEAM_ROSTER: 'wf_pro_team_roster_v4',
-  ACTIVE_EMP_ID: 'wf_pro_active_emp_id_v4',
+  USER: 'wf_pro_current_user_v5',
+  DATA: 'wf_pro_workspace_data_v5',
+  TEAM_ROSTER: 'wf_pro_team_roster_v5',
+  ACTIVE_EMP_ID: 'wf_pro_active_emp_id_v5',
   FIREBASE_CFG: 'wf_pro_firebase_config',
-  TASK_DRAFT: 'wf_pro_task_form_draft_v4',
+  TASK_DRAFT: 'wf_pro_task_form_draft_v5',
   OTP_WEBHOOK: 'wf_pro_otp_webhook_url_v2',
-  WHITELIST: 'wf_pro_email_whitelist_v4',
-  TRASH: 'wf_pro_trash_items_v4'
+  WHITELIST: 'wf_pro_email_whitelist_v5',
+  TRASH: 'wf_pro_trash_items_v5'
 };
 
 // Nếu người tạo hệ thống xuất file HTML đã gắn sẵn Bưu tá, link sẽ nằm ở biến này để Sếp & Nhân viên dùng ngay:
 let EMBEDDED_OTP_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxt2t2M-08wJFZ0bAwo6VAtJ2aDJGPlaQk9RHVvv0e2eI2UtmVExnzda-OFXCbtkz5TLg/exec';
 
-// Danh sách Email được khai báo trước (Chỉ những email này mới được phép nhận OTP và đăng nhập):
+// Danh sách Email được khai báo trước (Phân cấp 3 tầng: Super Admin, Mod/Quản lý, Nhân viên):
 let DEFAULT_WHITELIST = [
-  { email: 'thienlt@vaschools.edu.vn', name: 'Quản lý (thienlt@vaschools.edu.vn)', role: 'manager' },
-  { email: 'vuongvq@vaschools.edu.vn', name: 'Quản lý (vuongvq@vaschools.edu.vn)', role: 'manager' },
+  { email: 'thienlt@vaschools.edu.vn', name: 'Super Admin (thienlt@vaschools.edu.vn)', role: 'admin' },
+  { email: 'vuongvq@vaschools.edu.vn', name: 'Quản lý / Mod (vuongvq@vaschools.edu.vn)', role: 'mod' },
   { email: 'oanhhtl@hcm.vaschools.edu.vn', name: 'Nhân viên (oanhhtl@hcm.vaschools.edu.vn)', role: 'employee' },
   { email: 'nhilt@vaschools.edu.vn', name: 'Lê Thị Nhi (nhilt@vaschools.edu.vn)', role: 'employee' }
 ];
+
+function isAdmin(user = currentUser) {
+  if (!user) return false;
+  const email = (user.email || '').trim().toLowerCase();
+  return user.role === 'admin' || email === 'thienlt@vaschools.edu.vn';
+}
+
+function isMod(user = currentUser) {
+  if (!user) return false;
+  const email = (user.email || '').trim().toLowerCase();
+  return user.role === 'mod' || email === 'vuongvq@vaschools.edu.vn';
+}
+
+function isManager(user = currentUser) {
+  if (!user) return false;
+  if (isAdmin(user) || isMod(user)) return true;
+  const role = user.role;
+  return role === 'admin' || role === 'mod' || role === 'manager';
+}
+
+function getRoleBadgeText(role, email) {
+  if (role === 'admin' || (email && email.toLowerCase() === 'thienlt@vaschools.edu.vn')) return '👑 Super Admin';
+  if (role === 'mod' || role === 'manager' || (email && email.toLowerCase() === 'vuongvq@vaschools.edu.vn')) return '🛡️ Quản lý (Mod)';
+  return '👤 Nhân viên';
+}
 
 let pendingAuthName = '';
 let activeManagerSection = 'infographic'; // 'infographic' | 'journal' | 'grading'
@@ -175,11 +200,17 @@ window.addEventListener('DOMContentLoaded', () => {
       const parsed = JSON.parse(savedUser);
       const wlAccount = findWhitelistedAccount(parsed.email);
       if (wlAccount) {
+        let detectedRole = wlAccount.role;
+        const cleanEmail = (parsed.email || '').trim().toLowerCase();
+        if (cleanEmail === 'thienlt@vaschools.edu.vn') detectedRole = 'admin';
+        else if (cleanEmail === 'vuongvq@vaschools.edu.vn') detectedRole = 'mod';
+
         currentUser = {
           ...parsed,
-          role: wlAccount.role, // Khóa cứng vai trò theo Danh sách Email đã khai báo
+          role: detectedRole,
           name: wlAccount.name || parsed.name
         };
+        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
         document.getElementById('auth-screen').classList.add('hidden');
       } else {
         localStorage.removeItem(STORAGE_KEYS.USER);
@@ -197,7 +228,7 @@ window.addEventListener('DOMContentLoaded', () => {
   updateUserUI();
   updateOTPModeStatusUI();
   setupFormDraftAutoSave();
-  switchTab(currentUser && currentUser.role === 'manager' ? 'team' : 'overview');
+  switchTab(isManager(currentUser) ? 'team' : 'overview');
   renderAll();
 
   // Tu dong kiem tra va dong bo du lieu Cloud moi 25 giay
@@ -330,7 +361,7 @@ async function syncSaveToCloud() {
       const res = await resp.json();
       if (res && res.ok) {
         const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-        setSyncIndicator(☁️ Đã đồng bộ Cloud (), 'bg-emerald-400');
+        setSyncIndicator('☁️ Đã đồng bộ Cloud (' + timeStr + ')', 'bg-emerald-400');
       } else {
         setSyncIndicator('Đã lưu máy (Cloud chờ kết nối)', 'bg-emerald-400');
       }
@@ -374,10 +405,10 @@ async function syncLoadFromCloud(silent = false) {
         if (shouldUpdate) {
           teamWorkspaces = cloudData.teamWorkspaces;
           if (Array.isArray(cloudData.whitelist) && cloudData.whitelist.length > 0) {
-            saveWhitelist(cloudData.whitelist);
+            saveWhitelist(cloudData.whitelist, false);
           }
           if (Array.isArray(cloudData.trashItems)) {
-            saveTrashItems(cloudData.trashItems);
+            saveTrashItems(cloudData.trashItems, false);
           }
 
           if (teamWorkspaces[activeEmployeeId]) {
@@ -401,7 +432,7 @@ async function syncLoadFromCloud(silent = false) {
       syncSaveToCloud();
     }
     const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    setSyncIndicator(☁️ Đã đồng bộ Cloud (), 'bg-emerald-400');
+    setSyncIndicator('☁️ Đã đồng bộ Cloud (' + timeStr + ')', 'bg-emerald-400');
   } catch (err) {
     console.warn('Sync load warning:', err);
     if (!silent) {
@@ -439,7 +470,7 @@ function setSyncIndicator(text, dotColorClass) {
   const dot = document.getElementById('sidebar-sync-dot');
   const label = document.getElementById('sidebar-sync-text');
   if (dot && label) {
-    dot.className = w-2 h-2 rounded-full ;
+    dot.className = 'w-2 h-2 rounded-full ' + (dotColorClass || '');
     label.textContent = text;
   }
   const topText = document.getElementById('top-bar-sync-text');
@@ -462,13 +493,20 @@ function getWhitelist() {
   return DEFAULT_WHITELIST;
 }
 
-function saveWhitelist(list) {
+function saveWhitelist(list, shouldSync = true) {
   localStorage.setItem(STORAGE_KEYS.WHITELIST, JSON.stringify(list));
+  if (shouldSync) syncSaveToCloud();
 }
 
 function findWhitelistedAccount(email) {
   if (!email) return null;
   const clean = email.trim().toLowerCase();
+  if (clean === 'thienlt@vaschools.edu.vn') {
+    return { email: 'thienlt@vaschools.edu.vn', name: 'Super Admin (thienlt@vaschools.edu.vn)', role: 'admin' };
+  }
+  if (clean === 'vuongvq@vaschools.edu.vn') {
+    return { email: 'vuongvq@vaschools.edu.vn', name: 'Quản lý / Mod (vuongvq@vaschools.edu.vn)', role: 'mod' };
+  }
   return getWhitelist().find(item => (item.email || '').trim().toLowerCase() === clean) || null;
 }
 
@@ -478,9 +516,20 @@ function hideWhitelistError() {
 }
 
 function openWhitelistModal() {
-  if (currentUser.role !== 'manager') {
+  if (!isManager(currentUser)) {
     showToast('⛔ Chỉ tài khoản Quản lý mới có quyền quản lý danh sách Email!', 'error');
     return;
+  }
+  const roleSelect = document.getElementById('wl-role-input');
+  if (roleSelect) {
+    if (isMod(currentUser)) {
+      roleSelect.innerHTML = '<option value="employee">👤 Nhân viên</option>';
+    } else {
+      roleSelect.innerHTML = `
+        <option value="employee">👤 Nhân viên</option>
+        <option value="mod">🛡️ Quản lý (Mod)</option>
+      `;
+    }
   }
   renderWhitelistTable();
   document.getElementById('whitelist-modal').classList.remove('hidden');
@@ -494,13 +543,53 @@ function closeWhitelistModal() {
 function renderWhitelistTable() {
   const tbody = document.getElementById('whitelist-table-body');
   if (!tbody) return;
-  const list = getWhitelist();
+  let list = getWhitelist();
+
+  // NẾU LÀ MOD (vuongvq@vaschools.edu.vn):
+  // ẨN HOÀN TOÀN TÀI KHOẢN CỦA ADMIN (thienlt@vaschools.edu.vn) KHÔNG THỂ THẤY
+  if (isMod(currentUser)) {
+    list = list.filter(item => {
+      const e = (item.email || '').toLowerCase();
+      return item.role !== 'admin' && e !== 'thienlt@vaschools.edu.vn';
+    });
+  }
 
   tbody.innerHTML = list.map((item, idx) => {
-    const isMgr = item.role === 'manager';
-    const roleBadge = isMgr
-      ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-blue-600 text-white">👔 Quản lý (Sếp)</span>`
-      : `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-semibold bg-brand-50 text-brand-700 border border-brand-200">👨‍💻 Nhân viên</span>`;
+    let roleBadge = '';
+    const e = (item.email || '').toLowerCase();
+    if (item.role === 'admin' || e === 'thienlt@vaschools.edu.vn') {
+      roleBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-amber-600 text-white">👑 Super Admin</span>`;
+    } else if (item.role === 'mod' || item.role === 'manager' || e === 'vuongvq@vaschools.edu.vn') {
+      roleBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-blue-600 text-white">🛡️ Quản lý (Mod)</span>`;
+    } else {
+      roleBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-semibold bg-brand-50 text-brand-700 border border-brand-200">👤 Nhân viên</span>`;
+    }
+
+    let actionButtons = '';
+    if (isAdmin(currentUser)) {
+      if (e === 'thienlt@vaschools.edu.vn') {
+        actionButtons = `<span class="text-[11px] text-amber-700 font-bold">Chủ sở hữu</span>`;
+      } else {
+        actionButtons = `
+          <button type="button" onclick="toggleWhitelistRole('${escapeHtml(item.email)}')" class="px-2 py-1 rounded border border-slate-200 hover:bg-blue-50 text-blue-700 text-[11px] font-semibold mr-1 transition" title="Đổi quyền Quản lý / Nhân viên">
+            Đổi quyền
+          </button>
+          <button type="button" onclick="removeWhitelistEmailByEmail('${escapeHtml(item.email)}')" class="p-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50 transition" title="Xóa khỏi danh sách">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+      }
+    } else if (isMod(currentUser)) {
+      if (item.role === 'employee' || (!item.role && e !== 'vuongvq@vaschools.edu.vn')) {
+        actionButtons = `
+          <button type="button" onclick="removeWhitelistEmailByEmail('${escapeHtml(item.email)}')" class="p-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50 transition" title="Xóa nhân viên khỏi danh sách">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+      } else {
+        actionButtons = `<span class="text-[11px] text-slate-400 italic">Quản lý</span>`;
+      }
+    }
 
     return `
       <tr class="hover:bg-slate-50 transition">
@@ -511,14 +600,7 @@ function renderWhitelistTable() {
         </td>
         <td class="py-2.5 px-3 font-medium text-slate-800">${escapeHtml(item.name || item.email)}</td>
         <td class="py-2.5 px-3">${roleBadge}</td>
-        <td class="py-2.5 px-3 text-right whitespace-nowrap">
-          <button type="button" onclick="toggleWhitelistRole(${idx})" class="px-2 py-1 rounded border border-slate-200 hover:bg-blue-50 text-blue-700 text-[11px] font-semibold mr-1 transition" title="Đổi vai trò Quản lý / Nhân viên">
-            Đổi quyền
-          </button>
-          <button type="button" onclick="removeWhitelistEmail(${idx})" class="p-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50 transition" title="Xóa khỏi danh sách được phép truy cập">
-            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-          </button>
-        </td>
+        <td class="py-2.5 px-3 text-right whitespace-nowrap">${actionButtons}</td>
       </tr>
     `;
   }).join('');
@@ -539,18 +621,30 @@ function handleAddWhitelistEmail(e) {
   e.preventDefault();
   const email = document.getElementById('wl-email-input').value.trim().toLowerCase();
   const name = document.getElementById('wl-name-input').value.trim();
-  const role = document.getElementById('wl-role-input').value;
+  let role = document.getElementById('wl-role-input').value;
 
   if (!email || !email.includes('@')) return;
+
+  // Mod không được phép gán quyền admin hoặc sửa tài khoản Admin
+  if (isMod(currentUser)) {
+    role = 'employee';
+    if (email === 'thienlt@vaschools.edu.vn') {
+      showToast('⛔ Bạn không có quyền thao tác trên tài khoản Super Admin!', 'error');
+      return;
+    }
+  }
 
   const list = getWhitelist();
   const existingIdx = list.findIndex(x => x.email.toLowerCase() === email);
   if (existingIdx > -1) {
+    if (list[existingIdx].email.toLowerCase() === 'thienlt@vaschools.edu.vn' && !isAdmin(currentUser)) {
+      showToast('⛔ Không thể chỉnh sửa tài khoản Super Admin!', 'error');
+      return;
+    }
     list[existingIdx] = { email, name: name || email, role };
     showToast(`Đã cập nhật quyền cho email ${email}!`, 'success');
   } else {
     list.push({ email, name: name || email, role });
-    // Nếu là nhân viên mới, khởi tạo sẵn bảng công việc cho email này
     if (role === 'employee') {
       const existsInTeam = Object.values(teamWorkspaces).some(ws => (ws.ownerEmail || '').toLowerCase() === email);
       if (!existsInTeam) {
@@ -562,17 +656,16 @@ function handleAddWhitelistEmail(e) {
           ownerEmail: email,
           position: 'Chuyên viên Pháp chế & Hồ sơ',
           updatedAt: new Date().toISOString(),
-          tasks: generateSeedTasks(email),
+          tasks: [],
           weeklyReviews: {},
           employeeNotes: {},
-          adhocTasks: generateSeedAdhocTasks(email),
+          adhocTasks: [],
           activityLogs: []
         };
-        teamWorkspaces[newEmpId].activityLogs = generateInitialLogsFromTasks(teamWorkspaces[newEmpId].tasks);
         saveWorkspaceData();
       }
     }
-    showToast(`Đã thêm ${email} (${role === 'manager' ? 'Quản lý' : 'Nhân viên'}) vào danh sách cấp quyền!`, 'success');
+    showToast(`Đã thêm ${email} (${getRoleBadgeText(role, email)}) vào danh sách cấp quyền!`, 'success');
   }
 
   saveWhitelist(list);
@@ -582,29 +675,54 @@ function handleAddWhitelistEmail(e) {
   renderAll();
 }
 
-function toggleWhitelistRole(idx) {
-  const list = getWhitelist();
-  if (!list[idx]) return;
-  list[idx].role = list[idx].role === 'manager' ? 'employee' : 'manager';
-  saveWhitelist(list);
-  renderWhitelistTable();
-  showToast(`Đã chuyển quyền của ${list[idx].email} sang ${list[idx].role === 'manager' ? 'Quản lý (Sếp)' : 'Nhân viên'}`, 'info');
-}
-
-function removeWhitelistEmail(idx) {
-  const list = getWhitelist();
-  if (!list[idx]) return;
-  if (list.length <= 1) {
-    showToast('Phải giữ lại ít nhất 1 tài khoản trong danh sách!', 'error');
+function toggleWhitelistRole(targetEmail) {
+  if (!isAdmin(currentUser)) {
+    showToast('⛔ Chỉ Super Admin mới có quyền đổi vai trò quản lý / nhân viên!', 'error');
     return;
   }
+  const clean = (targetEmail || '').trim().toLowerCase();
+  if (clean === 'thienlt@vaschools.edu.vn') {
+    showToast('⛔ Không thể thay đổi quyền của Super Admin!', 'error');
+    return;
+  }
+  const list = getWhitelist();
+  const idx = list.findIndex(x => (x.email || '').toLowerCase() === clean);
+  if (idx === -1) return;
+  list[idx].role = (list[idx].role === 'mod' || list[idx].role === 'manager') ? 'employee' : 'mod';
+  saveWhitelist(list);
+  renderWhitelistTable();
+  showToast(`Đã đổi quyền của ${list[idx].email} thành ${getRoleBadgeText(list[idx].role, list[idx].email)}`, 'info');
+}
+
+function removeWhitelistEmailByEmail(targetEmail) {
+  const clean = (targetEmail || '').trim().toLowerCase();
+  if (clean === 'thienlt@vaschools.edu.vn') {
+    showToast('⛔ Không thể xóa tài khoản Super Admin!', 'error');
+    return;
+  }
+  if (isMod(currentUser) && clean === 'vuongvq@vaschools.edu.vn') {
+    showToast('⛔ Bạn không thể tự xóa tài khoản Quản lý của mình!', 'error');
+    return;
+  }
+
+  const list = getWhitelist();
+  const idx = list.findIndex(x => (x.email || '').toLowerCase() === clean);
+  if (idx === -1) return;
+
   const removed = list[idx];
   if (!confirm(`Bạn có chắc muốn thu hồi quyền truy cập của email "${removed.email}"?`)) return;
   list.splice(idx, 1);
   saveWhitelist(list);
-  const trashId = moveToTrash('whitelist', removed, 'EMAIL', removed.email, 'Tài khoản nhân sự');
+  moveToTrash('whitelist', removed, 'EMAIL', removed.email, 'Tài khoản nhân sự');
   renderWhitelistTable();
   showToast(`Đã thu hồi quyền của ${removed.email} (Đã lưu vào Thùng rác để Khôi phục)`, 'info');
+}
+
+function removeWhitelistEmail(idx) {
+  const list = getWhitelist();
+  if (list[idx]) {
+    removeWhitelistEmailByEmail(list[idx].email);
+  }
 }
 
 function restoreDefaultWhitelist() {
@@ -628,9 +746,10 @@ function getTrashItems() {
   return [];
 }
 
-function saveTrashItems(items) {
+function saveTrashItems(items, shouldSync = true) {
   localStorage.setItem(STORAGE_KEYS.TRASH, JSON.stringify(items));
   updateTrashBadge();
+  if (shouldSync) syncSaveToCloud();
 }
 
 function updateTrashBadge() {
@@ -753,9 +872,19 @@ function filterTrash(type) {
 function renderTrashTable() {
   updateTrashBadge();
   const trash = getTrashItems();
-  const filtered = currentTrashFilter === 'all'
+  const isCurrentUserMod = isMod(currentUser);
+  let filtered = currentTrashFilter === 'all'
     ? trash
     : trash.filter(x => x.itemType === currentTrashFilter);
+
+  // NẾU LÀ MOD: KHÔNG HIỂN THỊ CÁC MỤC THÙNG RÁC LIÊN QUAN ĐẾN ADMIN (thienlt@vaschools.edu.vn)
+  if (isCurrentUserMod) {
+    filtered = filtered.filter(x => {
+      const db = (x.deletedBy || '').toLowerCase();
+      const rp = (x.relatedPerson || '').toLowerCase();
+      return !db.includes('thienlt') && !rp.includes('thienlt');
+    });
+  }
 
   const tbody = document.getElementById('trash-table-body');
   if (!tbody) return;
@@ -884,7 +1013,7 @@ async function handleRequestOTP(e) {
   pendingAuthName = authorizedAccount.name || email;
   pendingOTPCode = String(Math.floor(100000 + Math.random() * 900000));
 
-  document.getElementById('otp-target-email-display').textContent = `${email} (${pendingAuthRole === 'manager' ? '👔 Quyền Quản lý' : '👨‍💻 Quyền Nhân viên'})`;
+  document.getElementById('otp-target-email-display').textContent = `${email} (${getRoleBadgeText(pendingAuthRole, email)})`;
   document.getElementById('otp-generated-code-display').textContent = pendingOTPCode;
   document.getElementById('auth-otp-input').value = '';
 
@@ -955,106 +1084,21 @@ function closeOTPMailConfigModal() {
 }
 
 function copyGoogleAppsScriptCode() {
-  const code = \/**
- * Google Apps Script Web App - WorkFlow Pro
- * Chuc nang:
- * 1. Gui email chua ma OTP 6 chu so den hop thu nguoi dung
- * 2. Luu tru & Dong bo du lieu toan he thong (Cloud Database cho Quan ly & Nhan vien)
- */
-
-function doPost(e) {
-  try {
-    if (!e || !e.postData || !e.postData.contents) {
-      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "No post data" }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-    var data = JSON.parse(e.postData.contents);
-
-    // 1. GUI MA OTP XAC THUC QUA EMAIL
-    if (data.action === "send_otp" || (data.otp && !data.action)) {
-      var recipient = data.email || (e.parameter ? e.parameter.email : "");
-      var otpCode = data.otp || (e.parameter ? e.parameter.otp : "");
-      if (recipient && otpCode) {
-        MailApp.sendEmail({
-          to: recipient,
-          name: "Há»‡ Thá»‘ng Quáº£n LÃ½ Há»“ SÆ¡ (No-Reply)",
-          noReply: true,
-          subject: "[Há»‡ Thá»‘ng Há»“ SÆ¡] MÃ£ xÃ¡c thá»±c OTP Ä‘Äƒng nháº­p: " + otpCode,
-          htmlBody: "<div style='font-family:sans-serif;padding:20px;border:1px solid #ddd;border-radius:12px;max-width:480px'>"
-            + "<h2 style='color:#9e0b22;margin-top:0'>XÃ¡c thá»±c ÄÄƒng nháº­p Há»‡ thá»‘ng Há»“ sÆ¡</h2>"
-            + "<p>Xin chÃ o <b>" + recipient + "</b>,</p>"
-            + "<p>MÃ£ xÃ¡c thá»±c OTP (6 chá»¯ sá»‘) Ä‘á»ƒ truy cáº­p báº£ng cÃ´ng viá»‡c cá»§a báº¡n lÃ :</p>"
-            + "<div style='font-size:28px;font-weight:bold;letter-spacing:6px;color:#1d4ed8;background:#eff6ff;padding:12px 20px;text-align:center;border-radius:8px;margin:16px 0'>" + otpCode + "</div>"
-            + "<p style='color:#666;font-size:12px'>ÄÃ¢y lÃ  email tá»± Ä‘á»™ng tá»« há»‡ thá»‘ng, vui lÃ²ng khÃ´ng pháº£n há»“i.</p></div>"
-        });
-      }
-      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "send_otp" }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // 2. LUU DU LIEU DONG BO CLOUD TOAN HE THONG (SYNC SAVE)
-    if (data.action === "sync_save") {
-      saveToProperties(data.payload || "{}");
-      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "sync_save", time: new Date().toISOString() }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // 3. TAI DU LIEU DONG BO CLOUD MOI NHAT (SYNC LOAD)
-    if (data.action === "sync_load") {
-      var raw = loadFromProperties();
-      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "sync_load", payload: raw || null }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    return ContentService.createTextOutput(JSON.stringify({ ok: true }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+  const codeBlock = document.getElementById('gas-code-block');
+  const code = codeBlock ? codeBlock.textContent : '';
+  if (!code) {
+    showToast('Khong tim thay ma Script!', 'error');
+    return;
   }
-}
-
-function doGet(e) {
-  var raw = loadFromProperties();
-  return ContentService.createTextOutput(JSON.stringify({ ok: true, payload: raw || null }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function saveToProperties(jsonStr) {
-  var props = PropertiesService.getScriptProperties();
-  var chunkSize = 8000;
-  var count = Math.ceil(jsonStr.length / chunkSize);
-  var oldKeys = props.getKeys();
-  for (var i = 0; i < oldKeys.length; i++) {
-    if (oldKeys[i].indexOf("CHUNK_") === 0) {
-      props.deleteProperty(oldKeys[i]);
-    }
-  }
-  props.setProperty("CHUNK_COUNT", count.toString());
-  for (var i = 0; i < count; i++) {
-    props.setProperty("CHUNK_" + i, jsonStr.substring(i * chunkSize, (i + 1) * chunkSize));
-  }
-}
-
-function loadFromProperties() {
-  var props = PropertiesService.getScriptProperties();
-  var countStr = props.getProperty("CHUNK_COUNT");
-  if (!countStr) return null;
-  var count = parseInt(countStr, 10);
-  var str = "";
-  for (var i = 0; i < count; i++) {
-    str += props.getProperty("CHUNK_" + i) || "";
-  }
-  return str;
-}
-\;
   navigator.clipboard.writeText(code).then(() => {
     const label = document.getElementById('btn-copy-gas-text');
-    if (label) label.textContent = 'ÄÃ£ sao chÃ©p!';
-    showToast('ÄÃ£ sao chÃ©p mÃ£ Google Apps Script hoÃ n chá»‰nh (OTP + Cloud Database)!', 'success');
+    if (label) label.textContent = 'Da sao chep!';
+    showToast('Da sao chep ma Google Apps Script (OTP + Cloud Database)!', 'success');
     setTimeout(() => {
-      if (label) label.textContent = 'Sao chÃ©p Ä‘oáº¡n mÃ£';
+      if (label) label.textContent = 'Sao chep doan ma';
     }, 2500);
+  }).catch(() => {
+    showToast('Vui long sao chep truc tiep tren khung man hinh.', 'info');
   });
 }
 
@@ -1194,7 +1238,7 @@ function handleVerifyOTP(e) {
     'login',
     'OTP-AUTH',
     `Đăng nhập xác thực OTP thành công (${email})`,
-    `Xác thực bảo mật qua mã OTP gửi về email ${email} — Phân quyền cố định: ${role === 'manager' ? 'Cấp Quản lý (Sếp)' : 'Nhân viên'}`
+    `Xác thực bảo mật qua mã OTP gửi về email ${email} — Phân quyền: ${getRoleBadgeText(role, email)}`
   );
 
   if (fbDb) {
@@ -1205,12 +1249,13 @@ function handleVerifyOTP(e) {
   document.getElementById('auth-screen').classList.add('hidden');
   backToEmailStep();
   updateUserUI();
-  if (role === 'manager') {
+  if (isManager(currentUser)) {
     switchTab('team');
+    syncLoadFromCloud(false);
   } else {
     switchTab('overview');
   }
-  showToast(`Xác thực OTP thành công! Xin chào ${displayName} (${role === 'manager' ? 'Quản lý' : 'Nhân viên'})`, 'success');
+  showToast(`Xác thực OTP thành công! Xin chào ${displayName} (${getRoleBadgeText(role, email)})`, 'success');
 }
 
 function logoutUser() {
@@ -1222,17 +1267,30 @@ function logoutUser() {
 }
 
 function updateUserUI() {
-  const emailStr = currentUser.email || 'nhilt@vaschools.edu.vn';
+  const emailStr = (currentUser.email || 'nhilt@vaschools.edu.vn').trim().toLowerCase();
+  if (emailStr === 'thienlt@vaschools.edu.vn') {
+    currentUser.role = 'admin';
+    if (!currentUser.name || currentUser.name === emailStr) {
+      currentUser.name = 'Super Admin (thienlt@vaschools.edu.vn)';
+    }
+  } else if (emailStr === 'vuongvq@vaschools.edu.vn') {
+    currentUser.role = 'mod';
+    if (!currentUser.name || currentUser.name === emailStr) {
+      currentUser.name = 'Quản lý / Mod (vuongvq@vaschools.edu.vn)';
+    }
+  }
+
   const initials = emailStr.slice(0, 2).toUpperCase();
 
   document.getElementById('user-avatar').textContent = initials;
   document.getElementById('user-display-name').textContent = currentUser.name || emailStr;
-  document.getElementById('user-display-email').textContent = emailStr;
+  document.getElementById('user-display-email').textContent = currentUser.email || emailStr;
 
   const topBarEmail = document.getElementById('top-bar-email');
-  if (topBarEmail) topBarEmail.textContent = emailStr;
+  if (topBarEmail) topBarEmail.textContent = currentUser.email || emailStr;
   const topBarRole = document.getElementById('top-bar-role-text');
-  if (topBarRole) topBarRole.textContent = currentUser.role === 'manager' ? '👔 Cấp Quản lý' : '👨‍💻 Nhân viên';
+  const roleText = getRoleBadgeText(currentUser.role, emailStr);
+  if (topBarRole) topBarRole.textContent = roleText;
 
   const badge = document.getElementById('user-role-badge');
   const employeeNav = document.getElementById('employee-only-nav');
@@ -1247,9 +1305,14 @@ function updateUserUI() {
 
   updateTrashBadge();
 
-  if (currentUser.role === 'manager') {
-    badge.textContent = '👔 Cấp Quản lý (Toàn đội)';
-    badge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-600 text-white';
+  if (isManager(currentUser)) {
+    if (isAdmin(currentUser)) {
+      badge.textContent = '👑 Super Admin';
+      badge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-600 text-white shadow-sm';
+    } else {
+      badge.textContent = '🛡️ Quản lý (Mod)';
+      badge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-blue-600 text-white shadow-sm';
+    }
     if (employeeNav) employeeNav.classList.add('hidden');
     if (managerNav) managerNav.classList.remove('hidden');
     if (managerSwitcher) managerSwitcher.classList.remove('hidden');
@@ -1260,7 +1323,7 @@ function updateUserUI() {
     if (mgrHeaderActions) mgrHeaderActions.classList.remove('hidden');
     if (empKpiStrip) empKpiStrip.classList.add('hidden');
   } else {
-    badge.textContent = '👨‍💻 Nhân viên (Cá nhân)';
+    badge.textContent = '👤 Nhân viên (Cá nhân)';
     badge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-brand-600 text-white';
     if (employeeNav) employeeNav.classList.remove('hidden');
     if (managerNav) managerNav.classList.add('hidden');
@@ -2268,7 +2331,12 @@ function setDailyDateFilter(dateStr) {
 }
 
 function renderTeamTab() {
-  const entries = Object.entries(teamWorkspaces);
+  const isCurrentUserMod = isMod(currentUser);
+  // Nếu là Mod: Lọc bỏ bất kỳ workspace nào của Admin (thienlt@vaschools.edu.vn)
+  let entries = Object.entries(teamWorkspaces);
+  if (isCurrentUserMod) {
+    entries = entries.filter(([, ws]) => (ws.ownerEmail || '').toLowerCase() !== 'thienlt@vaschools.edu.vn');
+  }
   const wk = getWeekKey(currentWeekOffset);
   const mon = getMondayOfWeek(currentWeekOffset);
   const todayStr = toISODateString(new Date());
@@ -2609,6 +2677,15 @@ function renderTeamTab() {
     entries.forEach(([empId, ws]) => {
       if (currentFilterVal !== 'all' && currentFilterVal !== empId) return;
       (ws.activityLogs || []).forEach(log => {
+        // NẾU LÀ MOD: KHÔNG HIỂN THỊ CÁC THAO TÁC / NHẬT KÝ CỦA ADMIN (thienlt@vaschools.edu.vn)
+        if (isCurrentUserMod) {
+          const act = (log.actor || '').toLowerCase();
+          const dtl = (log.detail || '').toLowerCase();
+          const ttl = (log.title || '').toLowerCase();
+          if (act.includes('thienlt') || dtl.includes('thienlt') || ttl.includes('thienlt')) {
+            return;
+          }
+        }
         allLogs.push({ empId, empName: ws.ownerName, empEmail: ws.ownerEmail, ...log });
       });
     });
@@ -3242,7 +3319,7 @@ function handleWeeklyReviewSubmit(e) {
   workspaceData.weeklyReviews[wk] = {
     grade: document.getElementById('weekly-grade').value,
     comment: document.getElementById('weekly-comment-input').value.trim(),
-    reviewer: currentUser.role === 'manager' ? currentUser.name : 'Quản lý trực tiếp',
+    reviewer: `${currentUser.name} (${getRoleBadgeText(currentUser.role, currentUser.email)})`,
     updatedAt: new Date().toISOString()
   };
 
