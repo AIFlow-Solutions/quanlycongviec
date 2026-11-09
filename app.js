@@ -37,8 +37,7 @@ let DEFAULT_WHITELIST = [
   { email: 'thienlt@vaschools.edu.vn', name: 'Super Admin (thienlt@vaschools.edu.vn)', role: 'admin' },
   { email: 'vuongvq@vaschools.edu.vn', name: 'Quản lý / Mod (vuongvq@vaschools.edu.vn)', role: 'mod' },
   { email: 'oanhhtl@hcm.vaschools.edu.vn', name: 'Nhân viên (oanhhtl@hcm.vaschools.edu.vn)', role: 'employee' },
-  { email: 'nhilt@vaschools.edu.vn', name: 'Lê Thị Nhi (nhilt@vaschools.edu.vn)', role: 'employee' },
-  { email: 'thienvt4567@gmail.com', name: 'Thiện Lee', role: 'employee' }
+  { email: 'nhilt@vaschools.edu.vn', name: 'Lê Thị Nhi (nhilt@vaschools.edu.vn)', role: 'employee' }
 ];
 
 function isAdmin(user = currentUser) {
@@ -396,18 +395,6 @@ function seedDefaultWorkspace() {
       employeeNotes: {},
       adhocTasks: [],
       activityLogs: []
-    },
-    emp_3: {
-      empId: 'emp_3',
-      ownerName: 'Thiện Lee (thienvt4567@gmail.com)',
-      ownerEmail: 'thienvt4567@gmail.com',
-      position: 'Chuyên viên Pháp chế & Hồ sơ',
-      updatedAt: new Date().toISOString(),
-      tasks: [],
-      weeklyReviews: {},
-      employeeNotes: {},
-      adhocTasks: [],
-      activityLogs: []
     }
   };
 
@@ -500,10 +487,14 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   const cloudWl = Array.isArray(cloudData.whitelist) ? cloudData.whitelist : [];
   const localWl = getWhitelist();
   const wlMap = new Map();
-  [...DEFAULT_WHITELIST, ...cloudWl, ...localWl].forEach(item => {
+  const baseWlSource = (cloudWl.length > 0 || localWl.length > 0)
+    ? [...cloudWl, ...localWl]
+    : [...DEFAULT_WHITELIST];
+  // Luôn đảm bảo 2 tài khoản Quản lý gốc (Super Admin & Mod) tồn tại
+  [DEFAULT_WHITELIST[0], DEFAULT_WHITELIST[1], ...baseWlSource].forEach(item => {
     if (!item || !item.email) return;
     const cleanEmail = item.email.trim().toLowerCase();
-    if (trashedEmails.has(cleanEmail) && cleanEmail !== 'thienlt@vaschools.edu.vn') return;
+    if (trashedEmails.has(cleanEmail) && cleanEmail !== 'thienlt@vaschools.edu.vn' && cleanEmail !== 'vuongvq@vaschools.edu.vn') return;
     const prev = wlMap.get(cleanEmail);
     if (!prev || preferLocal) {
       wlMap.set(cleanEmail, {
@@ -516,6 +507,12 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   const mergedWl = Array.from(wlMap.values());
   saveWhitelist(mergedWl, false);
 
+  const allowedEmployeeEmails = new Set(
+    mergedWl
+      .filter(w => w.role === 'employee')
+      .map(w => w.email.trim().toLowerCase())
+  );
+
   // 3. Hợp nhất toàn bộ Không gian làm việc Nhân viên (teamWorkspaces) theo Email để không bao giờ mất hồ sơ hoặc nhật ký
   const cloudTeam = (cloudData.teamWorkspaces && typeof cloudData.teamWorkspaces === 'object') ? cloudData.teamWorkspaces : {};
   const localTeam = (teamWorkspaces && typeof teamWorkspaces === 'object') ? teamWorkspaces : {};
@@ -527,6 +524,8 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
     if (!ws || typeof ws !== 'object') return;
     const email = (ws.ownerEmail || '').trim().toLowerCase();
     if (!email || email === 'thienlt@vaschools.edu.vn' || email === 'vuongvq@vaschools.edu.vn') return;
+    // Nếu email đã bị xóa vào Thùng rác hoặc không còn trong danh sách Whitelist thì không nạp vào bảng theo dõi
+    if (trashedEmails.has(email) || !allowedEmployeeEmails.has(email)) return;
 
     const canonicalKey = emailToWsKey[email] || empKey;
     emailToWsKey[email] = canonicalKey;
@@ -807,25 +806,58 @@ function setSyncIndicator(text, dotColorClass) {
 // 5. EMAIL WHITELIST + OTP AUTHENTICATION & ROLE LOCK
 // ==========================================
 function getWhitelist() {
+  const trashedEmails = new Set();
+  try {
+    const rawTrash = localStorage.getItem(STORAGE_KEYS.TRASH);
+    if (rawTrash) {
+      const parsedTrash = JSON.parse(rawTrash);
+      if (Array.isArray(parsedTrash)) {
+        parsedTrash.forEach(tr => {
+          if (tr && tr.itemType === 'whitelist' && tr.itemData && tr.itemData.email) {
+            trashedEmails.add(tr.itemData.email.trim().toLowerCase());
+          }
+        });
+      }
+    }
+  } catch (e) {}
+
   const map = new Map();
-  DEFAULT_WHITELIST.forEach(item => {
+  // Luôn đảm bảo 2 tài khoản Quản lý gốc (Super Admin & Mod)
+  [DEFAULT_WHITELIST[0], DEFAULT_WHITELIST[1]].forEach(item => {
     if (item && item.email) {
-      map.set(item.email.trim().toLowerCase(), { ...item, email: item.email.trim().toLowerCase() });
+      const clean = item.email.trim().toLowerCase();
+      map.set(clean, { ...item, email: clean });
     }
   });
+
   const saved = localStorage.getItem(STORAGE_KEYS.WHITELIST);
+  let hasValidSaved = false;
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        hasValidSaved = true;
         parsed.forEach(item => {
           if (item && item.email) {
             const clean = item.email.trim().toLowerCase();
-            map.set(clean, { ...item, email: clean });
+            if (!trashedEmails.has(clean) || clean === 'thienlt@vaschools.edu.vn' || clean === 'vuongvq@vaschools.edu.vn') {
+              map.set(clean, { ...item, email: clean });
+            }
           }
         });
       }
     } catch (e) {}
+  }
+
+  if (!hasValidSaved) {
+    DEFAULT_WHITELIST.forEach(item => {
+      if (item && item.email) {
+        const clean = item.email.trim().toLowerCase();
+        if (!trashedEmails.has(clean) || clean === 'thienlt@vaschools.edu.vn' || clean === 'vuongvq@vaschools.edu.vn') {
+          map.set(clean, { ...item, email: clean });
+        }
+      }
+    });
   }
   return Array.from(map.values());
 }
@@ -974,6 +1006,19 @@ function handleAddWhitelistEmail(e) {
     }
   }
 
+  // Nếu email này trước đó từng bị đưa vào Thùng rác thì gỡ khỏi Thùng rác khi được cấp quyền lại
+  const currentTrash = getTrashItems();
+  const filteredTrash = currentTrash.filter(tr => {
+    if (tr && tr.itemType === 'whitelist' && tr.itemData && (tr.itemData.email || '').trim().toLowerCase() === email) {
+      if (tr.trashId) permanentlyDeletedTrashIds.add(tr.trashId);
+      return false;
+    }
+    return true;
+  });
+  if (filteredTrash.length !== currentTrash.length) {
+    saveTrashItems(filteredTrash, false);
+  }
+
   const list = getWhitelist();
   const existingIdx = list.findIndex(x => x.email.toLowerCase() === email);
   if (existingIdx > -1) {
@@ -1051,12 +1096,43 @@ function removeWhitelistEmailByEmail(targetEmail) {
   if (idx === -1) return;
 
   const removed = list[idx];
-  if (!confirm(`Bạn có chắc muốn thu hồi quyền truy cập của email "${removed.email}"?`)) return;
-  list.splice(idx, 1);
-  saveWhitelist(list);
-  moveToTrash('whitelist', removed, 'EMAIL', removed.email, 'Tài khoản nhân sự');
+  if (!confirm(`Bạn có chắc muốn thu hồi quyền truy cập và xóa nhân sự "${removed.email}" khỏi bảng theo dõi?`)) return;
+
+  // Tìm và lưu kèm toàn bộ dữ liệu hồ sơ/nhật ký của nhân viên này vào Thùng rác để nếu bấm "Khôi phục" sẽ lấy lại được 100%
+  let empSnapshot = null;
+  Object.keys(teamWorkspaces).forEach(empKey => {
+    const ws = teamWorkspaces[empKey];
+    if (ws && (ws.ownerEmail || '').trim().toLowerCase() === clean) {
+      empSnapshot = JSON.parse(JSON.stringify(ws));
+      delete teamWorkspaces[empKey];
+    }
+  });
+
+  // 1. Đưa vào Thùng rác trước (kèm bản sao toàn bộ hồ sơ/nhật ký của nhân viên đó)
+  moveToTrash('whitelist', { ...removed, savedWorkspace: empSnapshot }, 'EMAIL', removed.email, 'Tài khoản nhân sự');
+
+  // 2. Xóa khỏi danh sách Whitelist
+  const updatedList = list.filter(x => (x.email || '').toLowerCase() !== clean);
+  saveWhitelist(updatedList);
+
+  // 3. Cập nhật lại teamWorkspaces trên máy
+  if (!teamWorkspaces[activeEmployeeId]) {
+    activeEmployeeId = Object.keys(teamWorkspaces)[0] || 'emp_1';
+    workspaceData = teamWorkspaces[activeEmployeeId];
+  }
+  localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
+  localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+
+  // 4. Xóa document của nhân viên đó trên Firebase Firestore (wf_employees/{email}) để F5 không bị tải lại
+  if (fbDb) {
+    fbDb.collection('wf_employees').doc(clean).delete().catch(err => console.warn('Firestore delete emp warning:', err));
+  }
+  syncSystemStateToFirestore();
+  syncSaveToCloud();
+
   renderWhitelistTable();
-  showToast(`Đã thu hồi quyền của ${removed.email} (Đã lưu vào Thùng rác để Khôi phục)`, 'info');
+  renderAll();
+  showToast(`Đã xóa nhân sự ${removed.email} khỏi hệ thống & Firebase (Có thể khôi phục trong Thùng rác)`, 'info');
 }
 
 function removeWhitelistEmail(idx) {
@@ -1152,13 +1228,53 @@ function restoreTrashItem(trashId) {
     renderAll();
     showToast(`♻️ Đã khôi phục thành công đầu mục nhật ký [${item.code}]!`, 'success');
   } else if (item.itemType === 'whitelist') {
-    const list = getWhitelist();
-    if (!list.some(x => x.email.toLowerCase() === item.itemData.email.toLowerCase())) {
-      list.push(item.itemData);
-      saveWhitelist(list);
-      renderWhitelistTable();
+    const restoredEmail = (item.itemData.email || '').trim().toLowerCase();
+    // Gỡ tất cả các mục trùng email này khỏi Thùng rác trước để getWhitelist() không lọc bỏ
+    for (let i = trash.length - 1; i >= 0; i--) {
+      if (trash[i].itemType === 'whitelist' && trash[i].itemData && (trash[i].itemData.email || '').trim().toLowerCase() === restoredEmail) {
+        permanentlyDeletedTrashIds.add(trash[i].trashId);
+        trash.splice(i, 1);
+      }
     }
-    showToast(`♻️ Đã khôi phục cấp quyền truy cập cho email ${item.itemData.email}!`, 'success');
+    saveTrashItems(trash, false);
+
+    const list = getWhitelist();
+    const cleanAccount = {
+      email: restoredEmail,
+      name: item.itemData.name || restoredEmail,
+      role: item.itemData.role || 'employee'
+    };
+    if (!list.some(x => x.email.toLowerCase() === restoredEmail)) {
+      list.push(cleanAccount);
+    }
+    saveWhitelist(list, false);
+
+    // Khôi phục lại cả không gian hồ sơ & nhật ký của nhân viên (nếu có)
+    if (cleanAccount.role === 'employee') {
+      const wsId = 'ws_' + btoa(encodeURIComponent(restoredEmail)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+      const empKey = (item.itemData.savedWorkspace && item.itemData.savedWorkspace.empId) || ('emp_' + wsId);
+      teamWorkspaces[empKey] = item.itemData.savedWorkspace || {
+        empId: empKey,
+        ownerName: cleanAccount.name.includes(restoredEmail) ? cleanAccount.name : `${cleanAccount.name} (${restoredEmail})`,
+        ownerEmail: restoredEmail,
+        position: 'Chuyên viên Pháp chế & Hồ sơ',
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+        weeklyReviews: {},
+        employeeNotes: {},
+        adhocTasks: [],
+        activityLogs: []
+      };
+      localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
+    }
+
+    renderWhitelistTable();
+    renderAll();
+    syncSaveToCloud();
+    pushAllToFirestore();
+    renderTrashTable();
+    showToast(`♻️ Đã khôi phục nhân sự ${restoredEmail} cùng toàn bộ hồ sơ/nhật ký lên Firebase!`, 'success');
+    return;
   }
 
   permanentlyDeletedTrashIds.add(trashId);
