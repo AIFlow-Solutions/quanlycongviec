@@ -32,9 +32,21 @@ let EMBEDDED_FIREBASE_CONFIG = {
   measurementId: "G-4JE4K832XK"
 };
 
+// Danh sách Email Super Admin tối cao (có toàn quyền hệ thống giống nhau):
+const SUPER_ADMIN_EMAILS = [
+  'thienlt@vaschools.edu.vn',
+  'oanhnhh2021@gmail.com'
+];
+
+function isSuperAdminEmail(email) {
+  if (!email) return false;
+  return SUPER_ADMIN_EMAILS.includes(email.trim().toLowerCase());
+}
+
 // Danh sách Email được khai báo trước (Phân cấp 3 tầng: Super Admin, Mod/Quản lý, Nhân viên):
 let DEFAULT_WHITELIST = [
   { email: 'thienlt@vaschools.edu.vn', name: 'Super Admin (thienlt@vaschools.edu.vn)', role: 'admin' },
+  { email: 'oanhnhh2021@gmail.com', name: 'Super Admin (oanhnhh2021@gmail.com)', role: 'admin' },
   { email: 'vuongvq@vaschools.edu.vn', name: 'Quản lý / Mod (vuongvq@vaschools.edu.vn)', role: 'mod' },
   { email: 'oanhhtl@hcm.vaschools.edu.vn', name: 'Nhân viên (oanhhtl@hcm.vaschools.edu.vn)', role: 'employee' },
   { email: 'nhilt@vaschools.edu.vn', name: 'Lê Thị Nhi (nhilt@vaschools.edu.vn)', role: 'employee' }
@@ -43,7 +55,7 @@ let DEFAULT_WHITELIST = [
 function isAdmin(user = currentUser) {
   if (!user) return false;
   const email = (user.email || '').trim().toLowerCase();
-  return user.role === 'admin' || email === 'thienlt@vaschools.edu.vn';
+  return user.role === 'admin' || isSuperAdminEmail(email);
 }
 
 function isMod(user = currentUser) {
@@ -60,7 +72,7 @@ function isManager(user = currentUser) {
 }
 
 function getRoleBadgeText(role, email) {
-  if (role === 'admin' || (email && email.toLowerCase() === 'thienlt@vaschools.edu.vn')) return '👑 Super Admin';
+  if (role === 'admin' || isSuperAdminEmail(email)) return '👑 Super Admin';
   if (role === 'mod' || role === 'manager' || (email && email.toLowerCase() === 'vuongvq@vaschools.edu.vn')) return '🛡️ Quản lý (Mod)';
   return '👤 Nhân viên';
 }
@@ -213,7 +225,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (wlAccount) {
         let detectedRole = wlAccount.role;
         const cleanEmail = (parsed.email || '').trim().toLowerCase();
-        if (cleanEmail === 'thienlt@vaschools.edu.vn') detectedRole = 'admin';
+        if (isSuperAdminEmail(cleanEmail)) detectedRole = 'admin';
         else if (cleanEmail === 'vuongvq@vaschools.edu.vn') detectedRole = 'mod';
 
         currentUser = {
@@ -490,17 +502,17 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   const baseWlSource = (cloudWl.length > 0 || localWl.length > 0)
     ? [...cloudWl, ...localWl]
     : [...DEFAULT_WHITELIST];
-  // Luôn đảm bảo 2 tài khoản Quản lý gốc (Super Admin & Mod) tồn tại
-  [DEFAULT_WHITELIST[0], DEFAULT_WHITELIST[1], ...baseWlSource].forEach(item => {
+  // Luôn đảm bảo các tài khoản Quản lý gốc (2 Super Admin & Mod) tồn tại
+  [DEFAULT_WHITELIST[0], DEFAULT_WHITELIST[1], DEFAULT_WHITELIST[2], ...baseWlSource].forEach(item => {
     if (!item || !item.email) return;
     const cleanEmail = item.email.trim().toLowerCase();
-    if (trashedEmails.has(cleanEmail) && cleanEmail !== 'thienlt@vaschools.edu.vn' && cleanEmail !== 'vuongvq@vaschools.edu.vn') return;
+    if (trashedEmails.has(cleanEmail) && !isSuperAdminEmail(cleanEmail) && cleanEmail !== 'vuongvq@vaschools.edu.vn') return;
     const prev = wlMap.get(cleanEmail);
     if (!prev || preferLocal) {
       wlMap.set(cleanEmail, {
         email: cleanEmail,
         name: item.name || (prev && prev.name) || cleanEmail,
-        role: cleanEmail === 'thienlt@vaschools.edu.vn' ? 'admin' : (cleanEmail === 'vuongvq@vaschools.edu.vn' ? 'mod' : (item.role || (prev && prev.role) || 'employee'))
+        role: isSuperAdminEmail(cleanEmail) ? 'admin' : (cleanEmail === 'vuongvq@vaschools.edu.vn' ? 'mod' : (item.role || (prev && prev.role) || 'employee'))
       });
     }
   });
@@ -523,7 +535,7 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   function upsertWorkspace(empKey, ws, isLocalSource) {
     if (!ws || typeof ws !== 'object') return;
     const email = (ws.ownerEmail || '').trim().toLowerCase();
-    if (!email || email === 'thienlt@vaschools.edu.vn' || email === 'vuongvq@vaschools.edu.vn') return;
+    if (!email || isSuperAdminEmail(email) || email === 'vuongvq@vaschools.edu.vn') return;
     // Nếu email đã bị xóa vào Thùng rác hoặc không còn trong danh sách Whitelist thì không nạp vào bảng theo dõi
     if (trashedEmails.has(email) || !allowedEmployeeEmails.has(email)) return;
 
@@ -822,8 +834,8 @@ function getWhitelist() {
   } catch (e) {}
 
   const map = new Map();
-  // Luôn đảm bảo 2 tài khoản Quản lý gốc (Super Admin & Mod)
-  [DEFAULT_WHITELIST[0], DEFAULT_WHITELIST[1]].forEach(item => {
+  // Luôn đảm bảo các tài khoản Quản lý gốc (2 Super Admin & Mod)
+  [DEFAULT_WHITELIST[0], DEFAULT_WHITELIST[1], DEFAULT_WHITELIST[2]].forEach(item => {
     if (item && item.email) {
       const clean = item.email.trim().toLowerCase();
       map.set(clean, { ...item, email: clean });
@@ -840,8 +852,8 @@ function getWhitelist() {
         parsed.forEach(item => {
           if (item && item.email) {
             const clean = item.email.trim().toLowerCase();
-            if (!trashedEmails.has(clean) || clean === 'thienlt@vaschools.edu.vn' || clean === 'vuongvq@vaschools.edu.vn') {
-              map.set(clean, { ...item, email: clean });
+            if (!trashedEmails.has(clean) || isSuperAdminEmail(clean) || clean === 'vuongvq@vaschools.edu.vn') {
+              map.set(clean, { ...item, email: clean, role: isSuperAdminEmail(clean) ? 'admin' : item.role });
             }
           }
         });
@@ -853,7 +865,7 @@ function getWhitelist() {
     DEFAULT_WHITELIST.forEach(item => {
       if (item && item.email) {
         const clean = item.email.trim().toLowerCase();
-        if (!trashedEmails.has(clean) || clean === 'thienlt@vaschools.edu.vn' || clean === 'vuongvq@vaschools.edu.vn') {
+        if (!trashedEmails.has(clean) || isSuperAdminEmail(clean) || clean === 'vuongvq@vaschools.edu.vn') {
           map.set(clean, { ...item, email: clean });
         }
       }
@@ -873,8 +885,8 @@ function saveWhitelist(list, shouldSync = true) {
 function findWhitelistedAccount(email) {
   if (!email) return null;
   const clean = email.trim().toLowerCase();
-  if (clean === 'thienlt@vaschools.edu.vn') {
-    return { email: 'thienlt@vaschools.edu.vn', name: 'Super Admin (thienlt@vaschools.edu.vn)', role: 'admin' };
+  if (isSuperAdminEmail(clean)) {
+    return { email: clean, name: `Super Admin (${clean})`, role: 'admin' };
   }
   if (clean === 'vuongvq@vaschools.edu.vn') {
     return { email: 'vuongvq@vaschools.edu.vn', name: 'Quản lý / Mod (vuongvq@vaschools.edu.vn)', role: 'mod' };
@@ -918,18 +930,18 @@ function renderWhitelistTable() {
   let list = getWhitelist();
 
   // NẾU LÀ MOD (vuongvq@vaschools.edu.vn):
-  // ẨN HOÀN TOÀN TÀI KHOẢN CỦA ADMIN (thienlt@vaschools.edu.vn) KHÔNG THỂ THẤY
+  // ẨN HOÀN TOÀN TÀI KHOẢN CỦA SUPER ADMIN KHÔNG THỂ THẤY
   if (isMod(currentUser)) {
     list = list.filter(item => {
       const e = (item.email || '').toLowerCase();
-      return item.role !== 'admin' && e !== 'thienlt@vaschools.edu.vn';
+      return item.role !== 'admin' && !isSuperAdminEmail(e);
     });
   }
 
   tbody.innerHTML = list.map((item, idx) => {
     let roleBadge = '';
     const e = (item.email || '').toLowerCase();
-    if (item.role === 'admin' || e === 'thienlt@vaschools.edu.vn') {
+    if (item.role === 'admin' || isSuperAdminEmail(e)) {
       roleBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-amber-600 text-white">👑 Super Admin</span>`;
     } else if (item.role === 'mod' || item.role === 'manager' || e === 'vuongvq@vaschools.edu.vn') {
       roleBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-blue-600 text-white">🛡️ Quản lý (Mod)</span>`;
@@ -939,7 +951,7 @@ function renderWhitelistTable() {
 
     let actionButtons = '';
     if (isAdmin(currentUser)) {
-      if (e === 'thienlt@vaschools.edu.vn') {
+      if (isSuperAdminEmail(e)) {
         actionButtons = `<span class="text-[11px] text-amber-700 font-bold">Chủ sở hữu</span>`;
       } else {
         actionButtons = `
@@ -1000,7 +1012,7 @@ function handleAddWhitelistEmail(e) {
   // Mod không được phép gán quyền admin hoặc sửa tài khoản Admin
   if (isMod(currentUser)) {
     role = 'employee';
-    if (email === 'thienlt@vaschools.edu.vn') {
+    if (isSuperAdminEmail(email)) {
       showToast('⛔ Bạn không có quyền thao tác trên tài khoản Super Admin!', 'error');
       return;
     }
@@ -1022,7 +1034,7 @@ function handleAddWhitelistEmail(e) {
   const list = getWhitelist();
   const existingIdx = list.findIndex(x => x.email.toLowerCase() === email);
   if (existingIdx > -1) {
-    if (list[existingIdx].email.toLowerCase() === 'thienlt@vaschools.edu.vn' && !isAdmin(currentUser)) {
+    if (isSuperAdminEmail(list[existingIdx].email) && !isAdmin(currentUser)) {
       showToast('⛔ Không thể chỉnh sửa tài khoản Super Admin!', 'error');
       return;
     }
@@ -1067,7 +1079,7 @@ function toggleWhitelistRole(targetEmail) {
     return;
   }
   const clean = (targetEmail || '').trim().toLowerCase();
-  if (clean === 'thienlt@vaschools.edu.vn') {
+  if (isSuperAdminEmail(clean)) {
     showToast('⛔ Không thể thay đổi quyền của Super Admin!', 'error');
     return;
   }
@@ -1082,7 +1094,7 @@ function toggleWhitelistRole(targetEmail) {
 
 function removeWhitelistEmailByEmail(targetEmail) {
   const clean = (targetEmail || '').trim().toLowerCase();
-  if (clean === 'thienlt@vaschools.edu.vn') {
+  if (isSuperAdminEmail(clean)) {
     showToast('⛔ Không thể xóa tài khoản Super Admin!', 'error');
     return;
   }
@@ -1341,12 +1353,12 @@ function renderTrashTable() {
     ? trash
     : trash.filter(x => x.itemType === currentTrashFilter);
 
-  // NẾU LÀ MOD: KHÔNG HIỂN THỊ CÁC MỤC THÙNG RÁC LIÊN QUAN ĐẾN ADMIN (thienlt@vaschools.edu.vn)
+  // NẾU LÀ MOD: KHÔNG HIỂN THỊ CÁC MỤC THÙNG RÁC LIÊN QUAN ĐẾN ADMIN
   if (isCurrentUserMod) {
     filtered = filtered.filter(x => {
       const db = (x.deletedBy || '').toLowerCase();
       const rp = (x.relatedPerson || '').toLowerCase();
-      return !db.includes('thienlt') && !rp.includes('thienlt');
+      return !db.includes('thienlt') && !rp.includes('thienlt') && !db.includes('oanhnhh2021') && !rp.includes('oanhnhh2021');
     });
   }
 
@@ -2239,7 +2251,7 @@ function renderHeaderEmployeeSwitcher() {
   const isCurrentUserMod = isMod(currentUser);
   let entries = Object.entries(teamWorkspaces);
   if (isCurrentUserMod) {
-    entries = entries.filter(([, ws]) => (ws.ownerEmail || '').toLowerCase() !== 'thienlt@vaschools.edu.vn');
+    entries = entries.filter(([, ws]) => !isSuperAdminEmail(ws.ownerEmail));
   }
   const teamFilter = document.getElementById('team-filter-emp');
   const currentSelected = (teamFilter && teamFilter.value) || activeEmployeeId || 'all';
@@ -3080,7 +3092,7 @@ function renderTeamTab() {
   // Nếu là Mod: Lọc bỏ bất kỳ workspace nào của Admin (thienlt@vaschools.edu.vn)
   let entries = Object.entries(teamWorkspaces);
   if (isCurrentUserMod) {
-    entries = entries.filter(([, ws]) => (ws.ownerEmail || '').toLowerCase() !== 'thienlt@vaschools.edu.vn');
+    entries = entries.filter(([, ws]) => !isSuperAdminEmail(ws.ownerEmail));
   }
   const wk = getWeekKey(currentWeekOffset);
   const mon = getMondayOfWeek(currentWeekOffset);
@@ -3543,12 +3555,12 @@ function renderTeamTab() {
     entries.forEach(([empId, ws]) => {
       if (currentFilterVal !== 'all' && currentFilterVal !== empId) return;
       (ws.activityLogs || []).forEach(log => {
-        // NẾU LÀ MOD: KHÔNG HIỂN THỊ CÁC THAO TÁC / NHẬT KÝ CỦA ADMIN (thienlt@vaschools.edu.vn)
+        // NẾU LÀ MOD: KHÔNG HIỂN THỊ CÁC THAO TÁC / NHẬT KÝ CỦA ADMIN
         if (isCurrentUserMod) {
           const act = (log.actor || '').toLowerCase();
           const dtl = (log.detail || '').toLowerCase();
           const ttl = (log.title || '').toLowerCase();
-          if (act.includes('thienlt') || dtl.includes('thienlt') || ttl.includes('thienlt')) {
+          if (act.includes('thienlt') || dtl.includes('thienlt') || ttl.includes('thienlt') || act.includes('oanhnhh2021') || dtl.includes('oanhnhh2021') || ttl.includes('oanhnhh2021')) {
             return;
           }
         }
@@ -4761,7 +4773,7 @@ async function syncActiveEmployeeToFirestore() {
 
     if (targetWs && targetWs.ownerEmail) {
       const emailDocId = targetWs.ownerEmail.trim().toLowerCase();
-      if (emailDocId && emailDocId !== 'thienlt@vaschools.edu.vn' && emailDocId !== 'vuongvq@vaschools.edu.vn') {
+      if (emailDocId && !isSuperAdminEmail(emailDocId) && emailDocId !== 'vuongvq@vaschools.edu.vn') {
         const docRef = fbDb.collection('wf_employees').doc(emailDocId);
         await docRef.set({
           empId: targetWs.empId || ('emp_' + emailDocId),
@@ -4805,7 +4817,7 @@ async function pushAllToFirestore() {
     const promises = Object.values(teamWorkspaces).map(ws => {
       if (!ws || !ws.ownerEmail) return Promise.resolve();
       const emailDocId = ws.ownerEmail.trim().toLowerCase();
-      if (!emailDocId || emailDocId === 'thienlt@vaschools.edu.vn' || emailDocId === 'vuongvq@vaschools.edu.vn') {
+      if (!emailDocId || isSuperAdminEmail(emailDocId) || emailDocId === 'vuongvq@vaschools.edu.vn') {
         return Promise.resolve();
       }
       return fbDb.collection('wf_employees').doc(emailDocId).set({
