@@ -272,9 +272,10 @@
             </button>
             <button onclick="switchManagerSection('grading')" id="nav-mgr-grading" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
               <div class="flex items-center space-x-3">
-                <i data-lucide="award" class="w-4 h-4"></i>
-                <span>Chấm điểm & Đánh giá NV</span>
+                <i data-lucide="folder-check" class="w-4 h-4"></i>
+                <span>Hồ sơ NV & Chấm điểm</span>
               </div>
+              <span id="nav-mgr-grading-count" class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded-full font-bold">0</span>
             </button>
           </div>
 
@@ -866,8 +867,8 @@
                 <span>2. Nhật ký Nhân viên đã làm gì</span>
               </button>
               <button type="button" id="pill-mgr-grading" onclick="switchManagerSection('grading')" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-2 transition">
-                <i data-lucide="award" class="w-4 h-4"></i>
-                <span>3. Chấm điểm & Đánh giá kết quả</span>
+                <i data-lucide="folder-check" class="w-4 h-4"></i>
+                <span>3. Danh sách Hồ sơ NV & Chấm điểm</span>
               </button>
             </div>
             <span class="text-[11px] text-slate-400 px-3 hidden sm:inline-block">💡 Chế độ Quản lý: Chỉ xem báo cáo Infographic, nhật ký & đánh giá</span>
@@ -1101,8 +1102,21 @@
             <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
               <div class="p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h4 class="text-sm font-bold text-slate-900">Đánh giá & Chấm điểm Kết quả Đầu việc của Nhân viên trong Tuần</h4>
-                  <p class="text-xs text-slate-500">Quản lý xem kết quả bàn giao, mở link tài liệu Drive của nhân viên và chấm điểm chất lượng (1–5★)</p>
+                  <h4 class="text-sm font-bold text-slate-900">Danh sách Toàn bộ Hồ sơ Khởi tạo / Hoàn thành của Nhân viên & Chấm điểm</h4>
+                  <p class="text-xs text-slate-500">Quản lý theo dõi mọi hồ sơ nhân viên đã tạo, đang xử lý hoặc đã hoàn thành, mở link tài liệu Drive và chấm điểm chất lượng (1–5★)</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <select id="mgr-task-time-filter" onchange="pageState.teamTasks=1; renderTeamTab()" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-brand-600">
+                    <option value="all" selected>📂 Tất cả hồ sơ (Mọi tuần)</option>
+                    <option value="week">📆 Chỉ tuần đang chọn</option>
+                  </select>
+                  <select id="mgr-task-status-filter" onchange="pageState.teamTasks=1; renderTeamTab()" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-brand-600">
+                    <option value="all">-- Tất cả trạng thái --</option>
+                    <option value="completed">✅ Đã hoàn thành (100%)</option>
+                    <option value="in_progress">⚡ Đang thực hiện</option>
+                    <option value="pending">⏳ Chờ xử lý</option>
+                    <option value="overdue">🚨 Quá hạn</option>
+                  </select>
                 </div>
               </div>
               <div class="overflow-x-auto">
@@ -1883,8 +1897,8 @@ function loadFromProperties() {
       <span class="truncate">Nhật ký NV</span>
     </button>
     <button type="button" onclick="switchManagerSection('grading')" id="mnav-mgr-grading" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-semibold text-slate-500 transition">
-      <i data-lucide="award" class="w-4 h-4 mb-0.5"></i>
-      <span class="truncate">Chấm điểm</span>
+      <i data-lucide="folder-check" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Hồ sơ NV</span>
     </button>
     <button type="button" onclick="toggleMobileSidebar()" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-semibold text-slate-500 transition">
       <i data-lucide="menu" class="w-4 h-4 mb-0.5"></i>

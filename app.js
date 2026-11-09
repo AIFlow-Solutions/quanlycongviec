@@ -1980,17 +1980,22 @@ function isTaskInSelectedWeekOrCarriedOver(t, mon, sun) {
 
   const assignDate = t.assignedDate ? new Date(t.assignedDate + 'T00:00:00') : null;
   const deadlineDate = t.deadline ? new Date(t.deadline) : null;
+  const updatedDate = t.updatedAt ? new Date(t.updatedAt) : null;
+  const createdDate = t.createdAt ? new Date(t.createdAt) : null;
 
   // 1. Hồ sơ được tiếp nhận trong tuần đang chọn
   const assignedInWeek = assignDate && assignDate >= mon && assignDate <= sun;
   // 2. Hồ sơ có hạn hoàn thành (Deadline) nằm trong tuần đang chọn
   const deadlineInWeek = deadlineDate && deadlineDate >= mon && deadlineDate <= sun;
-  // 3. TỰ ĐỘNG CHUYỂN TIẾP HỒ SƠ CHƯA XONG / QUÁ HẠN TỪ TUẦN TRƯỚC SANG TUẦN HIỆN TẠI:
+  // 3. Hồ sơ được khởi tạo hoặc cập nhật / hoàn thành thực tế trong tuần đang chọn
+  const updatedInWeek = updatedDate && updatedDate >= mon && updatedDate <= sun;
+  const createdInWeek = createdDate && createdDate >= mon && createdDate <= sun;
+  // 4. TỰ ĐỘNG CHUYỂN TIẾP HỒ SƠ CHƯA XONG / QUÁ HẠN TỪ TUẦN TRƯỚC SANG TUẦN HIỆN TẠI:
   // Nếu hồ sơ khởi tạo ở tuần trước mà chưa hoàn thành (status !== 'completed'),
   // bắt buộc giữ lại ở tuần hiện tại để cảnh báo "Quá hạn / Tồn đọng" cho Nhân viên và Quản lý!
   const carriedOverUnfinished = (currentWeekOffset >= 0) && assignDate && (assignDate < mon) && (t.status !== 'completed');
 
-  return Boolean(assignedInWeek || deadlineInWeek || carriedOverUnfinished);
+  return Boolean(assignedInWeek || deadlineInWeek || updatedInWeek || createdInWeek || carriedOverUnfinished);
 }
 
 function isTaskCarriedOverFromPastWeek(t) {
@@ -3074,8 +3079,15 @@ function renderTeamTab() {
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         ${activeEntries.map(([empId, ws]) => {
-          // Tasks completed or due on this date
-          const tasksOnDay = (ws.tasks || []).filter(t => t.assignedDate === selectedDailyDate || (t.deadline && t.deadline.slice(0, 10) === selectedDailyDate));
+          // Tasks assigned, due, created, or updated/completed on this date
+          const tasksOnDay = (ws.tasks || []).filter(t => {
+            const updDate = t.updatedAt ? toISODateString(new Date(t.updatedAt)) : '';
+            const crtDate = t.createdAt ? toISODateString(new Date(t.createdAt)) : '';
+            return t.assignedDate === selectedDailyDate ||
+              (t.deadline && t.deadline.slice(0, 10) === selectedDailyDate) ||
+              updDate === selectedDailyDate ||
+              crtDate === selectedDailyDate;
+          });
           const completedOnDay = tasksOnDay.filter(t => t.status === 'completed');
           const inProgressOnDay = tasksOnDay.filter(t => t.status !== 'completed');
 
@@ -3220,13 +3232,18 @@ function renderTeamTab() {
   // 5. Render Weekly Charts (Status Donut & Daily Rhythm)
   renderManagerWeeklyCharts(entries, currentFilterVal, mon);
 
-  // 6. Render Employee Scorecard Infographics Grid
+  // 6. Render Employee Scorecard Infographics Grid (with Direct Dossier List!)
   const cardsHTML = entries.map(([empId, ws]) => {
-    const empWeekTasks = getWeekTasksFromList(ws.tasks);
-    const total = empWeekTasks.length;
-    const done = empWeekTasks.filter(t => getEffectiveStatus(t) === 'completed').length;
-    const inProg = empWeekTasks.filter(t => getEffectiveStatus(t) === 'in_progress').length;
-    const overdue = empWeekTasks.filter(t => getEffectiveStatus(t) === 'overdue').length;
+    const allEmpTasks = Array.isArray(ws.tasks) ? ws.tasks : [];
+    const empWeekTasks = getWeekTasksFromList(allEmpTasks);
+    // Nếu tuần hiện tại chưa có hồ sơ nhưng nhân viên có hồ sơ ở các tuần trước, hiển thị toàn bộ hồ sơ của nhân viên đó để Quản lý luôn thấy
+    const displayTasks = empWeekTasks.length > 0 ? empWeekTasks : allEmpTasks;
+    const isShowingAllHistory = empWeekTasks.length === 0 && allEmpTasks.length > 0;
+
+    const total = displayTasks.length;
+    const done = displayTasks.filter(t => getEffectiveStatus(t) === 'completed').length;
+    const inProg = displayTasks.filter(t => getEffectiveStatus(t) === 'in_progress').length;
+    const overdue = displayTasks.filter(t => getEffectiveStatus(t) === 'overdue').length;
     const rate = total > 0 ? Math.round((done / total) * 100) : 0;
     const weekRev = ws.weeklyReviews && ws.weeklyReviews[wk];
     const initials = (ws.ownerName || 'NV').split(' ').map(w => w[0]).join('').slice(-2).toUpperCase();
@@ -3244,21 +3261,22 @@ function renderTeamTab() {
                 <p class="text-[11px] text-slate-500 font-mono">${escapeHtml(ws.ownerEmail)}</p>
               </div>
             </div>
-            ${weekRev ? `
-              <span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                🏆 ${escapeHtml(weekRev.grade.split(' ')[0])}
+            <div class="flex flex-col items-end gap-1">
+              <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                📂 Tổng: ${allEmpTasks.length} hồ sơ
               </span>
-            ` : `
-              <span class="px-2.5 py-1 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                Chưa xếp loại tuần
-              </span>
-            `}
+              ${weekRev ? `
+                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  🏆 ${escapeHtml(weekRev.grade.split(' ')[0])}
+                </span>
+              ` : ''}
+            </div>
           </div>
 
           <div class="mt-4">
             <div class="flex justify-between text-xs mb-1">
-              <span class="text-slate-600 font-medium">Tiến độ tuần này</span>
-              <span class="font-bold text-slate-900">${done}/${total} hồ sơ (${rate}%)</span>
+              <span class="text-slate-600 font-medium">${isShowingAllHistory ? 'Tiến độ tổng hồ sơ đã tạo' : 'Tiến độ hồ sơ tuần này'}</span>
+              <span class="font-bold text-slate-900">${done}/${total} hoàn thành (${rate}%)</span>
             </div>
             <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
               <div class="h-full bg-emerald-500 rounded-full transition-all" style="width: ${rate}%"></div>
@@ -3280,6 +3298,51 @@ function renderTeamTab() {
             </div>
           </div>
 
+          <!-- Direct List of Created & Completed Dossiers for this Employee -->
+          <div class="mt-4 pt-3 border-t border-slate-100">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                📁 Hồ sơ Đã Tạo & Hoàn Thành (${displayTasks.length}):
+              </span>
+              ${isShowingAllHistory ? `<span class="text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">Lịch sử các tuần</span>` : ''}
+            </div>
+            ${displayTasks.length === 0 ? `
+              <p class="text-xs text-slate-400 italic py-3 text-center bg-slate-50 rounded-xl border border-slate-100">
+                Nhân viên chưa khởi tạo hồ sơ nào.
+              </p>
+            ` : `
+              <div class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                ${displayTasks.map(t => {
+                  const eff = getEffectiveStatus(t);
+                  const isDone = eff === 'completed';
+                  const isOver = eff === 'overdue';
+                  return `
+                    <div class="p-2.5 rounded-xl border ${isDone ? 'bg-emerald-50/50 border-emerald-200/80' : isOver ? 'bg-rose-50/50 border-rose-200/80' : 'bg-slate-50 border-slate-200/80'} text-xs flex items-start justify-between gap-2">
+                      <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-brand-700">${escapeHtml(t.code)}</span>
+                          ${getStatusBadgeHTML(eff)}
+                          <span class="text-[10px] font-bold text-slate-600">${t.progress}%</span>
+                          ${t.rating ? `<span class="text-[10px] font-bold text-amber-600">★${t.rating}</span>` : ''}
+                        </div>
+                        <p class="font-bold text-slate-900 mt-1 break-words">${escapeHtml(t.title)}</p>
+                        <div class="text-[10px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
+                          <span>📅 Nhận: ${formatVNDate(t.assignedDate)}</span>
+                          <span>⏰ Hạn: ${formatVNDateTime(t.deadline)}</span>
+                          ${t.link ? `<a href="${escapeHtml(t.link)}" target="_blank" class="text-blue-600 hover:underline font-bold">🔗 Mở file Drive</a>` : ''}
+                        </div>
+                        ${t.notes ? `<p class="text-[10px] text-slate-600 italic mt-0.5">"${escapeHtml(t.notes)}"</p>` : ''}
+                      </div>
+                      <button type="button" onclick="inspectAndReviewEmployeeTask('${empId}', '${t.id}')" class="shrink-0 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-sm transition" title="Chấm điểm & Đánh giá hồ sơ này">
+                        ⭐ Chấm
+                      </button>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+
           ${ws.employeeNotes && ws.employeeNotes[wk] ? `
             <div class="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 text-[11px] text-slate-600 italic">
               <strong>Báo cáo NV:</strong> "${escapeHtml(ws.employeeNotes[wk])}"
@@ -3289,7 +3352,7 @@ function renderTeamTab() {
 
         <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
           <button onclick="switchManagerSection('grading')" class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1 transition shadow-sm">
-            ⭐ Chấm điểm hồ sơ
+            📂 Mở bảng tổng hợp & Chấm điểm (${allEmpTasks.length} HS)
           </button>
           <button onclick="switchManagerSection('journal')" class="text-[11px] text-slate-500 hover:text-brand-600 font-medium flex items-center gap-1">
             <i data-lucide="history" class="w-3.5 h-3.5"></i> Xem nhật ký
@@ -3457,11 +3520,25 @@ function renderTeamTab() {
   }
 
   // 9. Render Grading Master Table (in Section 3)
+  const taskTimeFilter = document.getElementById('mgr-task-time-filter')?.value || 'all';
+  const taskStatusFilter = document.getElementById('mgr-task-status-filter')?.value || 'all';
+  let totalAllEmpDossiersCount = 0;
+  entries.forEach(([, ws]) => {
+    totalAllEmpDossiersCount += (ws.tasks || []).length;
+  });
+  const gradingCountBadge = document.getElementById('nav-mgr-grading-count');
+  if (gradingCountBadge) {
+    gradingCountBadge.textContent = String(totalAllEmpDossiersCount);
+  }
+
   const allRows = [];
   entries.forEach(([empId, ws]) => {
     if (currentFilterVal !== 'all' && currentFilterVal !== empId) return;
-    const empTasks = getWeekTasksFromList(ws.tasks);
+    const rawTasks = Array.isArray(ws.tasks) ? ws.tasks : [];
+    const empTasks = taskTimeFilter === 'week' ? getWeekTasksFromList(rawTasks) : rawTasks;
     empTasks.forEach(t => {
+      const eff = getEffectiveStatus(t);
+      if (taskStatusFilter !== 'all' && eff !== taskStatusFilter) return;
       allRows.push({ empId, empName: ws.ownerName, task: t });
     });
   });
