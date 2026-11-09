@@ -70,6 +70,9 @@
   aside,
   header,
   #shared-banner,
+  #mobile-bottom-nav-emp,
+  #mobile-bottom-nav-mgr,
+  #mobile-sidebar-backdrop,
   button {
     display: none !important;
   }
@@ -80,5 +83,58 @@
   }
   body {
     background: #ffffff !important;
+  }
+}
+
+/* =========================================================
+   MOBILE & TABLET RESPONSIVE OPTIMIZATION (ALL SMARTPHONES)
+   ========================================================= */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+#mobile-bottom-nav-emp,
+#mobile-bottom-nav-mgr {
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+}
+
+@media (max-width: 640px) {
+  /* Prevent automatic zoom on iOS Safari & mobile browsers when focusing inputs */
+  input[type="text"],
+  input[type="email"],
+  input[type="date"],
+  input[type="url"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Compact table cells and keep horizontal scroll smooth on phone screens */
+  table th,
+  table td {
+    padding-left: 0.625rem !important;
+    padding-right: 0.625rem !important;
+    padding-top: 0.625rem !important;
+    padding-bottom: 0.625rem !important;
+  }
+
+  /* Make KPI cards fit neatly in a 2-column grid on small phones */
+  #employee-kpi-strip > div {
+    padding: 0.75rem !important;
+  }
+  #employee-kpi-strip > div:last-child {
+    grid-column: span 2 / span 2;
+  }
+
+  /* Modal dialogs fit comfortably on small screens */
+  #task-modal > div,
+  #review-modal > div,
+  #weekly-review-modal > div,
+  #whitelist-modal > div,
+  #trash-modal > div {
+    max-height: 92vh;
+    overflow-y: auto;
+    margin: 0.25rem;
   }
 }

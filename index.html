@@ -41,36 +41,41 @@
 <body class="bg-[#e9ecef] text-slate-800 font-sans antialiased min-h-screen flex flex-col">
 
   <!-- TOP CRIMSON HEADER BAR (MATCHING ATTACHED SCREENSHOT) -->
-  <div class="crimson-top-bar text-white px-6 py-3 shadow-md flex flex-wrap items-center justify-between gap-3 sticky top-0 z-40">
-    <div class="flex items-center space-x-3">
-      <div class="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
+  <div class="crimson-top-bar text-white px-3 sm:px-6 py-2.5 sm:py-3 shadow-md flex flex-wrap items-center justify-between gap-2 sm:gap-3 sticky top-0 z-40">
+    <div class="flex items-center space-x-2 sm:space-x-3 min-w-0">
+      <!-- Mobile Hamburger Menu Button -->
+      <button type="button" onclick="toggleMobileSidebar()" class="lg:hidden w-9 h-9 rounded-lg bg-white/15 hover:bg-white/25 border border-white/30 flex items-center justify-center shrink-0 transition" title="Mở menu điều hướng">
+        <i data-lucide="menu" class="w-5 h-5 text-white"></i>
+      </button>
+      <div class="w-8 h-8 rounded-lg bg-white/15 hidden sm:flex items-center justify-center shrink-0">
         <i data-lucide="file-check-2" class="w-5 h-5 text-white"></i>
       </div>
-      <div>
-        <h1 class="text-base sm:text-lg font-bold tracking-wide uppercase">QUẢN LÝ HỒ SƠ & ĐẦU MỤC CÔNG VIỆC</h1>
+      <div class="min-w-0">
+        <h1 class="text-xs sm:text-lg font-bold tracking-wide uppercase truncate">QUẢN LÝ HỒ SƠ & ĐẦU MỤC CÔNG VIỆC</h1>
       </div>
     </div>
 
-    <div class="flex items-center space-x-3 text-xs">
-      <span class="hidden sm:inline-block text-white/95 font-medium">
+    <div class="flex flex-wrap items-center gap-1.5 sm:gap-2.5 text-xs">
+      <span class="hidden md:inline-block text-white/95 font-medium">
         Xin chào: <strong id="top-bar-email" class="font-bold underline decoration-white/40">nhilt@vaschools.edu.vn</strong>
       </span>
-      <span id="top-bar-role-badge" class="bg-white/15 border border-white/30 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5">
-        <i data-lucide="shield" class="w-4 h-4"></i>
-        <span id="top-bar-role-text">Nhân viên</span>
+      <span id="top-bar-role-badge" class="bg-white/15 border border-white/30 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1">
+        <i data-lucide="shield" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
+        <span id="top-bar-role-text" class="text-[11px] sm:text-xs">Nhân viên</span>
       </span>
-      <button id="top-bar-sync-btn" onclick="syncLoadFromCloud(false)" class="bg-white/15 hover:bg-white/25 border border-white/30 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5 transition shadow-sm" title="Bấm để đồng bộ dữ liệu mới nhất từ Cloud ngay lập tức">
-        <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-300"></i>
-        <span id="top-bar-sync-text">Đồng bộ Cloud</span>
+      <button id="top-bar-sync-btn" onclick="syncLoadFromCloud(false)" class="bg-white/15 hover:bg-white/25 border border-white/30 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="Bấm để đồng bộ dữ liệu mới nhất từ Cloud ngay lập tức">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-300 shrink-0"></i>
+        <span id="top-bar-sync-text" class="text-[11px] sm:text-xs">Đồng bộ Cloud</span>
       </button>
-      <button id="top-bar-whitelist-btn" onclick="openWhitelistModal()" class="hidden bg-blue-600 hover:bg-blue-700 border border-blue-400 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5 transition shadow-sm" title="Quản lý danh sách Email được phép truy cập">
-        <i data-lucide="user-check" class="w-4 h-4"></i>
-        <span>Danh sách Email cấp quyền</span>
+      <button id="top-bar-whitelist-btn" onclick="openWhitelistModal()" class="hidden bg-blue-600 hover:bg-blue-700 border border-blue-400 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="Quản lý danh sách Email được phép truy cập">
+        <i data-lucide="user-check" class="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0"></i>
+        <span class="hidden sm:inline">Danh sách Email cấp quyền</span>
+        <span class="sm:hidden text-[11px]">Cấp quyền</span>
       </button>
-      <button id="top-bar-trash-btn" onclick="openTrashModal()" class="hidden bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1.5 transition shadow-sm" title="Thùng rác & Khôi phục mục đã xóa">
-        <i data-lucide="trash-2" class="w-4 h-4 text-rose-400"></i>
-        <span>Thùng rác & Khôi phục</span>
-        <span id="trash-badge-count" class="bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1">0</span>
+      <button id="top-bar-trash-btn" onclick="openTrashModal()" class="hidden bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="Thùng rác & Khôi phục mục đã xóa">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400 shrink-0"></i>
+        <span class="hidden sm:inline">Thùng rác & Khôi phục</span>
+        <span id="trash-badge-count" class="bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">0</span>
       </button>
     </div>
   </div>
@@ -175,11 +180,21 @@
   </div>
 
   <!-- MAIN APPLICATION LAYOUT -->
-  <div class="flex-1 flex flex-col lg:flex-row">
+  <div class="flex-1 flex flex-col lg:flex-row relative">
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="mobile-sidebar-backdrop" onclick="closeMobileSidebar()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 hidden lg:hidden"></div>
     
-    <!-- SIDEBAR NAVIGATION (Clean White + Crimson Theme matching screenshot) -->
-    <aside class="w-full lg:w-64 bg-white border-r border-slate-200 text-slate-700 flex flex-col justify-between shrink-0 lg:min-h-screen shadow-sm">
+    <!-- SIDEBAR NAVIGATION (Clean White + Crimson Theme matching screenshot, Slide-Over Drawer on Mobile) -->
+    <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white border-r border-slate-200 text-slate-700 flex flex-col justify-between shrink-0 transform -translate-x-full lg:translate-x-0 lg:static lg:w-64 lg:min-h-screen shadow-2xl lg:shadow-sm transition-transform duration-200 ease-in-out overflow-y-auto">
       <div>
+        <!-- Mobile Drawer Header -->
+        <div class="flex lg:hidden items-center justify-between px-4 pt-3 pb-1 border-b border-slate-100">
+          <span class="text-xs font-bold uppercase tracking-wider text-brand-700">Menu Điều Hướng</span>
+          <button type="button" onclick="closeMobileSidebar()" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
         <!-- User Profile Summary Card -->
         <div class="p-4 mx-3 my-4 rounded-xl bg-brand-50/70 border border-brand-100">
           <div class="flex items-center space-x-3">
@@ -275,13 +290,16 @@
         </nav>
       </div>
 
-      <!-- Bottom Actions (Cloud & Logout) -->
-      <div class="p-4 border-t border-slate-200 space-y-2.5 text-xs">
-        <div class="flex items-center px-2.5 py-1.5 rounded-lg bg-slate-100">
+      <!-- Bottom Actions (Cloud, Backup & Logout) -->
+      <div class="p-4 border-t border-slate-200 space-y-2 text-xs">
+        <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100">
           <div class="flex items-center space-x-2">
             <span id="sidebar-sync-dot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span id="sidebar-sync-text" class="text-slate-600 font-medium">Đã lưu tự động</span>
+            <span id="sidebar-sync-text" class="text-slate-600 font-medium text-[11px]">Đã lưu tự động</span>
           </div>
+          <button type="button" onclick="exportJSONBackup()" class="text-[11px] font-bold text-blue-600 hover:underline" title="Tải file sao lưu dự phòng toàn hệ thống (.json)">
+            Sao lưu .JSON
+          </button>
         </div>
         <button onclick="logoutUser()" class="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-700 text-slate-600 font-semibold transition">
           <i data-lucide="log-out" class="w-4 h-4"></i>
@@ -294,60 +312,67 @@
     <main class="flex-1 flex flex-col min-w-0">
       
       <!-- SUB-HEADER ACTION BAR -->
-      <header class="bg-white border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 shadow-sm">
-        <div class="flex items-center space-x-4">
-          <div>
-            <h2 id="page-title" class="text-base font-bold text-brand-700">Tổng quan & Phân việc trong tuần</h2>
-            <p id="page-subtitle" class="text-xs text-slate-500">Theo dõi tiến độ hồ sơ tiếp nhận, công việc phát sinh và đánh giá từ quản lý</p>
+      <header class="bg-white border-b border-slate-200 px-3 sm:px-6 py-3 sm:py-3.5 flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 shadow-sm">
+        <div class="flex items-center space-x-3 min-w-0">
+          <div class="min-w-0">
+            <h2 id="page-title" class="text-sm sm:text-base font-bold text-brand-700 truncate">Tổng quan & Phân việc trong tuần</h2>
+            <p id="page-subtitle" class="text-[11px] sm:text-xs text-slate-500 line-clamp-1">Theo dõi tiến độ hồ sơ tiếp nhận, công việc phát sinh và đánh giá từ quản lý</p>
           </div>
         </div>
 
         <!-- Week Selector & Quick Actions -->
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
           <!-- Employee Switcher Pill (Only visible to Manager role) -->
-          <div id="manager-only-switcher" class="hidden flex items-center bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1 text-xs">
-            <i data-lucide="user-check" class="w-3.5 h-3.5 text-brand-600 mr-1.5"></i>
-            <span class="text-[11px] text-brand-800 font-medium mr-1.5">Đang xem NV:</span>
-            <select id="header-employee-switcher" onchange="switchActiveEmployeeWorkspace(this.value)" class="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer text-xs">
+          <div id="manager-only-switcher" class="hidden flex items-center bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1 text-xs w-full sm:w-auto">
+            <i data-lucide="user-check" class="w-3.5 h-3.5 text-brand-600 mr-1.5 shrink-0"></i>
+            <span class="text-[11px] text-brand-800 font-medium mr-1.5 shrink-0">Đang xem NV:</span>
+            <select id="header-employee-switcher" onchange="switchActiveEmployeeWorkspace(this.value)" class="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer text-xs w-full sm:w-auto truncate">
               <!-- Populated by JS -->
             </select>
           </div>
 
           <!-- Week Picker -->
-          <div class="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
-            <button onclick="changeWeek(-1)" class="p-1 hover:bg-white rounded text-slate-600 transition" title="Tuần trước">
-              <i data-lucide="chevron-left" class="w-4 h-4"></i>
-            </button>
-            <div class="px-2.5 text-xs font-semibold text-slate-700 flex items-center space-x-1.5">
-              <i data-lucide="calendar" class="w-3.5 h-3.5 text-brand-600"></i>
-              <span id="current-week-label">Tuần này</span>
+          <div class="flex flex-wrap items-center bg-slate-100 rounded-lg p-1 border border-slate-200 w-full sm:w-auto justify-between sm:justify-start">
+            <div class="flex items-center">
+              <button onclick="changeWeek(-1)" class="p-1 hover:bg-white rounded text-slate-600 transition" title="Tuần trước">
+                <i data-lucide="chevron-left" class="w-4 h-4"></i>
+              </button>
+              <div class="px-2 text-xs font-semibold text-slate-700 flex items-center space-x-1.5">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 text-brand-600 shrink-0"></i>
+                <span id="current-week-label" class="truncate">Tuần này</span>
+              </div>
+              <button onclick="changeWeek(1)" class="p-1 hover:bg-white rounded text-slate-600 transition" title="Tuần kế tiếp">
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
             </div>
-            <button onclick="changeWeek(1)" class="p-1 hover:bg-white rounded text-slate-600 transition" title="Tuần kế tiếp">
-              <i data-lucide="chevron-right" class="w-4 h-4"></i>
-            </button>
-            <button onclick="resetToCurrentWeek()" class="ml-1 px-2 py-0.5 text-[11px] bg-white text-slate-600 rounded shadow-sm hover:text-brand-600 font-medium">
-              Hiện tại
-            </button>
+            <div class="flex items-center gap-1">
+              <button onclick="resetToCurrentWeek()" class="px-2 py-0.5 text-[11px] bg-white text-slate-600 rounded shadow-sm hover:text-brand-600 font-medium">
+                Hiện tại
+              </button>
+              <button id="btn-all-weeks" onclick="toggleAllWeeksView()" class="px-2 py-0.5 text-[11px] bg-white text-slate-600 rounded shadow-sm hover:text-brand-600 font-semibold transition" title="Hiển thị toàn bộ hồ sơ của tất cả các tuần">
+                📂 Tất cả tuần
+              </button>
+            </div>
           </div>
 
           <!-- Employee-Only Creation Actions (Hidden for Manager) -->
-          <div id="employee-only-header-actions" class="flex flex-wrap items-center gap-2">
+          <div id="employee-only-header-actions" class="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
             <!-- Quick Ad-hoc / Boss Task in Journal Button -->
-            <button onclick="openQuickAdhocJournal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition" title="Ghi việc cá nhân hoặc việc phát sinh từ Sếp vào Nhật ký mà không cần khai báo Hồ sơ">
-              <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+            <button onclick="openQuickAdhocJournal()" class="flex-1 sm:flex-initial justify-center bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition" title="Ghi việc cá nhân hoặc việc phát sinh từ Sếp vào Nhật ký mà không cần khai báo Hồ sơ">
+              <i data-lucide="zap" class="w-3.5 h-3.5 shrink-0"></i>
               <span>+ Việc Cá nhân / Sếp giao</span>
             </button>
 
             <!-- New Dossier / Task Button -->
-            <button onclick="openTaskModal()" class="bg-brand-600 hover:bg-brand-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition">
-              <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+            <button onclick="openTaskModal()" class="flex-1 sm:flex-initial justify-center bg-brand-600 hover:bg-brand-700 text-white px-3 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition">
+              <i data-lucide="plus-circle" class="w-3.5 h-3.5 shrink-0"></i>
               <span>+ Tiếp nhận Hồ sơ</span>
             </button>
           </div>
 
           <!-- Manager-Only Report Actions -->
-          <div id="manager-only-header-actions" class="hidden flex flex-wrap items-center gap-2">
-            <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition">
+          <div id="manager-only-header-actions" class="hidden flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <button onclick="window.print()" class="flex-1 sm:flex-initial justify-center bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition">
               <i data-lucide="printer" class="w-3.5 h-3.5"></i>
               <span>In Infographic / Xuất PDF</span>
             </button>
@@ -356,10 +381,10 @@
       </header>
 
       <!-- CONTENT CONTAINER -->
-      <div class="p-6 space-y-6 flex-1 overflow-y-auto">
+      <div class="p-3 sm:p-6 pb-24 lg:pb-6 space-y-5 sm:space-y-6 flex-1 overflow-y-auto">
 
         <!-- KPI SUMMARY CARDS (Only visible for Employee tabs) -->
-        <div id="employee-kpi-strip" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div id="employee-kpi-strip" class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-4">
           <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
             <div>
               <p class="text-xs font-medium text-slate-500">Tổng hồ sơ tuần này</p>
@@ -517,6 +542,8 @@
 
               <select id="filter-day" onchange="renderAll()" class="bg-white border border-slate-300 rounded-md px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-brand-600">
                 <option value="all">-- Tất cả Ngày trong tuần --</option>
+                <option value="all_weeks">📂 Toàn bộ hồ sơ (Tất cả các tuần)</option>
+                <option value="carried_over">🔄 Hồ sơ tồn đọng / Quá hạn từ tuần trước</option>
                 <option value="1">Thứ Hai</option>
                 <option value="2">Thứ Ba</option>
                 <option value="3">Thứ Tư</option>
@@ -987,16 +1014,45 @@
           <!-- ===================================================== -->
           <div id="mgr-sec-journal" class="hidden space-y-6">
             <!-- Part A: Chronological Activity Stream (Ai đã làm gì, lúc mấy giờ) -->
-            <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6">
+            <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-6">
               <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
                 <div>
                   <h4 class="text-sm font-bold text-slate-900 flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     <span>Nhật ký Hoạt động Chi tiết của Nhân viên (Theo dõi Nhân viên đã làm những gì)</span>
                   </h4>
-                  <p class="text-xs text-slate-500 mt-0.5">Ghi lại đầy đủ thời gian thực mọi đầu việc nhân viên đã tiếp nhận, cập nhật tiến độ, hoàn thành hoặc ghi chú trong ngày</p>
+                  <p class="text-xs text-slate-500 mt-0.5">Lưu vết liên tục mọi thao tác khởi tạo hồ sơ, cập nhật tiến độ, hoàn thành, chấm điểm và đăng nhập từ tất cả các tuần</p>
+                </div>
+                <span id="mgr-journal-total-badge" class="bg-brand-50 text-brand-700 border border-brand-200 px-3 py-1 rounded-full text-xs font-bold">0 hoạt động</span>
+              </div>
+
+              <!-- Manager Journal Filter Bar -->
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                <div>
+                  <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Khoảng thời gian</label>
+                  <select id="mgr-journal-time-filter" onchange="teamFeedPage=1; renderTeamTab()" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-brand-600">
+                    <option value="all">📅 Tất cả thời gian (Mọi tuần)</option>
+                    <option value="last_week">⏪ Tuần vừa rồi (Tuần trước)</option>
+                    <option value="selected_week">📆 Theo tuần đang chọn trên thanh lịch</option>
+                    <option value="today">⚡ Chỉ hôm nay</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Loại hoạt động</label>
+                  <select id="mgr-journal-type-filter" onchange="teamFeedPage=1; renderTeamTab()" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-brand-600">
+                    <option value="all">-- Tất cả hoạt động --</option>
+                    <option value="dossier">📁 Hồ sơ (Tạo mới / Tiến độ / Hoàn thành)</option>
+                    <option value="adhoc">⚡ Việc phát sinh & Ghi chú nhật ký</option>
+                    <option value="reviewed">⭐ Quản lý chấm điểm & Đánh giá</option>
+                    <option value="login">🔐 Lịch sử Đăng nhập OTP</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Tìm kiếm nhanh</label>
+                  <input type="text" id="mgr-journal-search" oninput="teamFeedPage=1; renderTeamTab()" placeholder="Tìm theo tên NV, email, mã HS..." class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-brand-600" />
                 </div>
               </div>
+
               <div id="team-live-feed-container" class="space-y-2.5">
                 <!-- Populated by JS -->
               </div>
@@ -1786,8 +1842,51 @@ function loadFromProperties() {
     </div>
   </div>
 
+  <!-- MOBILE BOTTOM NAVIGATION BAR (EMPLOYEE & MANAGER) -->
+  <nav id="mobile-bottom-nav-emp" class="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] grid grid-cols-5 px-1 py-1">
+    <button type="button" onclick="switchTab('overview')" id="mnav-overview" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-bold text-brand-700 bg-brand-50/90 transition">
+      <i data-lucide="layout-dashboard" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Tổng quan</span>
+    </button>
+    <button type="button" onclick="switchTab('dossiers')" id="mnav-dossiers" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-semibold text-slate-500 transition">
+      <i data-lucide="folder-kanban" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Hồ sơ</span>
+    </button>
+    <button type="button" onclick="switchTab('schedule')" id="mnav-schedule" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-semibold text-slate-500 transition">
+      <i data-lucide="calendar-days" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Lịch tuần</span>
+    </button>
+    <button type="button" onclick="switchTab('journal')" id="mnav-journal" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-semibold text-slate-500 transition">
+      <i data-lucide="notebook-pen" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Nhật ký</span>
+    </button>
+    <button type="button" onclick="switchTab('report')" id="mnav-report" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-semibold text-slate-500 transition">
+      <i data-lucide="file-bar-chart-2" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Báo cáo</span>
+    </button>
+  </nav>
+
+  <nav id="mobile-bottom-nav-mgr" class="hidden lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] grid grid-cols-4 px-1.5 py-1">
+    <button type="button" onclick="switchManagerSection('infographic')" id="mnav-mgr-infographic" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-bold text-brand-700 bg-brand-50/90 transition">
+      <i data-lucide="pie-chart" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Infographic</span>
+    </button>
+    <button type="button" onclick="switchManagerSection('journal')" id="mnav-mgr-journal" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-semibold text-slate-500 transition">
+      <i data-lucide="history" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Nhật ký NV</span>
+    </button>
+    <button type="button" onclick="switchManagerSection('grading')" id="mnav-mgr-grading" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-semibold text-slate-500 transition">
+      <i data-lucide="award" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Chấm điểm</span>
+    </button>
+    <button type="button" onclick="toggleMobileSidebar()" class="mobile-nav-item flex flex-col items-center justify-center py-1.5 rounded-xl text-[10px] font-semibold text-slate-500 transition">
+      <i data-lucide="menu" class="w-4 h-4 mb-0.5"></i>
+      <span class="truncate">Menu / Đổi NV</span>
+    </button>
+  </nav>
+
   <!-- TOAST NOTIFICATION -->
-  <div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+  <div id="toast-container" class="fixed bottom-16 lg:bottom-5 right-4 sm:right-5 z-50 space-y-2 pointer-events-none"></div>
 
   <!-- Firebase SDKs (Compat version for clean standalone browser usage) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>

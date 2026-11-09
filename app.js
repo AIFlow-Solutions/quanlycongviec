@@ -374,17 +374,199 @@ function seedDefaultWorkspace() {
       employeeNotes: {},
       adhocTasks: [],
       activityLogs: []
+    },
+    emp_3: {
+      empId: 'emp_3',
+      ownerName: 'Thiện Lee (thienvt4567@gmail.com)',
+      ownerEmail: 'thienvt4567@gmail.com',
+      position: 'Chuyên viên Pháp chế & Hồ sơ',
+      updatedAt: new Date().toISOString(),
+      tasks: [],
+      weeklyReviews: {},
+      employeeNotes: {},
+      adhocTasks: [],
+      activityLogs: []
     }
   };
 
   activeEmployeeId = 'emp_1';
   workspaceData = teamWorkspaces[activeEmployeeId];
-  saveWorkspaceData();
+  // TUYỆT ĐỐI KHÔNG GỌI saveWorkspaceData() / syncSaveToCloud() KHI KHỞI TẠO MẶC ĐỊNH
+  // ĐỂ TRÁNH THIẾT BỊ MỚI GHI ĐÈ DỮ LIỆU RỖNG LÊN CLOUD TRƯỚC KHI TẢI XONG!
+  if (!isViewingShared) {
+    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
+    localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+  }
 }
 
 let isSyncingToCloud = false;
 let cloudSyncDebounceTimer = null;
 let isSyncingFromCloud = false;
+let hasCompletedInitialCloudLoad = false;
+let permanentlyDeletedTrashIds = new Set();
+
+function mergeArraysById(cloudArr, localArr, idKey = 'id', preferLocal = false, excludedIds = new Set()) {
+  const map = new Map();
+  (Array.isArray(cloudArr) ? cloudArr : []).forEach(item => {
+    if (item && item[idKey] && !excludedIds.has(item[idKey])) {
+      map.set(item[idKey], item);
+    }
+  });
+  (Array.isArray(localArr) ? localArr : []).forEach(item => {
+    if (!item || !item[idKey] || excludedIds.has(item[idKey])) return;
+    const existing = map.get(item[idKey]);
+    if (!existing) {
+      map.set(item[idKey], item);
+    } else {
+      const cloudTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      const localTime = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+      if (localTime > cloudTime || (preferLocal && localTime >= cloudTime)) {
+        map.set(item[idKey], { ...existing, ...item });
+      } else {
+        map.set(item[idKey], { ...item, ...existing });
+      }
+    }
+  });
+  return Array.from(map.values());
+}
+
+function mergeCloudAndLocalData(cloudData, preferLocal = false) {
+  if (!cloudData || typeof cloudData !== 'object') return;
+
+  // 1. Hợp nhất danh sách Thùng rác (Trash)
+  const cloudTrash = Array.isArray(cloudData.trashItems) ? cloudData.trashItems : [];
+  const localTrash = getTrashItems();
+  const mergedTrash = mergeArraysById(cloudTrash, localTrash, 'trashId', preferLocal, permanentlyDeletedTrashIds);
+  mergedTrash.sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0));
+  saveTrashItems(mergedTrash, false);
+
+  // Tập hợp các ID hồ sơ / việc phát sinh / email đang nằm trong Thùng rác để không phục hồi nhầm khi gộp
+  const trashedTaskIds = new Set();
+  const trashedAdhocIds = new Set();
+  const trashedEmails = new Set();
+  mergedTrash.forEach(tr => {
+    if (tr.itemType === 'task' && tr.itemData && tr.itemData.id) trashedTaskIds.add(tr.itemData.id);
+    if (tr.itemType === 'adhoc' && tr.itemData && tr.itemData.id) trashedAdhocIds.add(tr.itemData.id);
+    if (tr.itemType === 'whitelist' && tr.itemData && tr.itemData.email) {
+      trashedEmails.add(tr.itemData.email.trim().toLowerCase());
+    }
+  });
+
+  // 2. Hợp nhất danh sách Email cấp quyền (Whitelist)
+  const cloudWl = Array.isArray(cloudData.whitelist) ? cloudData.whitelist : [];
+  const localWl = getWhitelist();
+  const wlMap = new Map();
+  [...DEFAULT_WHITELIST, ...cloudWl, ...localWl].forEach(item => {
+    if (!item || !item.email) return;
+    const cleanEmail = item.email.trim().toLowerCase();
+    if (trashedEmails.has(cleanEmail) && cleanEmail !== 'thienlt@vaschools.edu.vn') return;
+    const prev = wlMap.get(cleanEmail);
+    if (!prev || preferLocal) {
+      wlMap.set(cleanEmail, {
+        email: cleanEmail,
+        name: item.name || (prev && prev.name) || cleanEmail,
+        role: cleanEmail === 'thienlt@vaschools.edu.vn' ? 'admin' : (cleanEmail === 'vuongvq@vaschools.edu.vn' ? 'mod' : (item.role || (prev && prev.role) || 'employee'))
+      });
+    }
+  });
+  const mergedWl = Array.from(wlMap.values());
+  saveWhitelist(mergedWl, false);
+
+  // 3. Hợp nhất toàn bộ Không gian làm việc Nhân viên (teamWorkspaces) theo Email để không bao giờ mất hồ sơ hoặc nhật ký
+  const cloudTeam = (cloudData.teamWorkspaces && typeof cloudData.teamWorkspaces === 'object') ? cloudData.teamWorkspaces : {};
+  const localTeam = (teamWorkspaces && typeof teamWorkspaces === 'object') ? teamWorkspaces : {};
+
+  const emailToWsKey = {};
+  const mergedTeam = {};
+
+  function upsertWorkspace(empKey, ws, isLocalSource) {
+    if (!ws || typeof ws !== 'object') return;
+    const email = (ws.ownerEmail || '').trim().toLowerCase();
+    if (!email || email === 'thienlt@vaschools.edu.vn' || email === 'vuongvq@vaschools.edu.vn') return;
+
+    const canonicalKey = emailToWsKey[email] || empKey;
+    emailToWsKey[email] = canonicalKey;
+
+    if (!mergedTeam[canonicalKey]) {
+      mergedTeam[canonicalKey] = {
+        empId: canonicalKey,
+        ownerName: ws.ownerName || email,
+        ownerEmail: email,
+        position: ws.position || 'Chuyên viên Pháp chế & Hồ sơ',
+        updatedAt: ws.updatedAt || new Date().toISOString(),
+        tasks: Array.isArray(ws.tasks) ? ws.tasks.filter(t => t && !trashedTaskIds.has(t.id)) : [],
+        weeklyReviews: (ws.weeklyReviews && typeof ws.weeklyReviews === 'object') ? { ...ws.weeklyReviews } : {},
+        employeeNotes: (ws.employeeNotes && typeof ws.employeeNotes === 'object') ? { ...ws.employeeNotes } : {},
+        adhocTasks: Array.isArray(ws.adhocTasks) ? ws.adhocTasks.filter(a => a && !trashedAdhocIds.has(a.id)) : [],
+        activityLogs: Array.isArray(ws.activityLogs) ? [...ws.activityLogs] : []
+      };
+    } else {
+      const target = mergedTeam[canonicalKey];
+      if (ws.ownerName && ws.ownerName.length > (target.ownerName || '').length) {
+        target.ownerName = ws.ownerName;
+      }
+      target.tasks = mergeArraysById(target.tasks, ws.tasks, 'id', isLocalSource && preferLocal, trashedTaskIds);
+      target.adhocTasks = mergeArraysById(target.adhocTasks, ws.adhocTasks, 'id', isLocalSource && preferLocal, trashedAdhocIds);
+      target.activityLogs = mergeArraysById(target.activityLogs, ws.activityLogs, 'id', isLocalSource && preferLocal);
+      target.activityLogs.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+      target.weeklyReviews = { ...(target.weeklyReviews || {}), ...(ws.weeklyReviews || {}) };
+      target.employeeNotes = { ...(target.employeeNotes || {}), ...(ws.employeeNotes || {}) };
+    }
+  }
+
+  Object.entries(cloudTeam).forEach(([k, ws]) => upsertWorkspace(k, ws, false));
+  Object.entries(localTeam).forEach(([k, ws]) => upsertWorkspace(k, ws, true));
+
+  // Đảm bảo mọi nhân viên trong Whitelist đều có sẵn Workspace
+  mergedWl.forEach(wl => {
+    if (wl.role === 'employee') {
+      const email = wl.email.trim().toLowerCase();
+      if (!emailToWsKey[email]) {
+        const wsId = 'ws_' + btoa(encodeURIComponent(email)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+        const newKey = 'emp_' + wsId;
+        upsertWorkspace(newKey, {
+          empId: newKey,
+          ownerName: wl.name.includes(email) ? wl.name : `${wl.name} (${email})`,
+          ownerEmail: email,
+          position: 'Chuyên viên Pháp chế & Hồ sơ',
+          tasks: [],
+          weeklyReviews: {},
+          employeeNotes: {},
+          adhocTasks: [],
+          activityLogs: []
+        }, false);
+      }
+    }
+  });
+
+  teamWorkspaces = mergedTeam;
+  cleanForeignLogs();
+  ensureEmployeeWorkspaceMatched();
+
+  if (teamWorkspaces[activeEmployeeId]) {
+    workspaceData = teamWorkspaces[activeEmployeeId];
+  } else {
+    const firstKey = Object.keys(teamWorkspaces)[0];
+    if (firstKey) {
+      activeEmployeeId = firstKey;
+      workspaceData = teamWorkspaces[activeEmployeeId];
+    }
+  }
+
+  if (!isViewingShared) {
+    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
+    localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+    // Lưu thêm 1 bản sao dự phòng tự động vào máy
+    localStorage.setItem('wf_pro_auto_backup_v5', JSON.stringify({
+      teamWorkspaces,
+      whitelist: getWhitelist(),
+      trashItems: getTrashItems(),
+      backedUpAt: new Date().toISOString()
+    }));
+  }
+}
 
 async function syncSaveToCloud() {
   const url = getOTPWebhookUrl();
@@ -394,8 +576,29 @@ async function syncSaveToCloud() {
   cloudSyncDebounceTimer = setTimeout(async () => {
     if (isSyncingToCloud) return;
     isSyncingToCloud = true;
-    setSyncIndicator('Đang lưu Cloud...', 'bg-amber-400 animate-pulse');
+    setSyncIndicator('Đang đồng bộ Cloud...', 'bg-amber-400 animate-pulse');
     try {
+      // BƯỚC 1 (ATOMIC READ-MODIFY-WRITE): Tải dữ liệu hiện có trên Cloud về gộp trước khi lưu
+      // để đảm bảo thiết bị mới hoặc nhân viên khác không bao giờ ghi đè làm mất dữ liệu của nhau!
+      try {
+        const checkResp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'sync_load' })
+        });
+        const checkRes = await checkResp.json();
+        if (checkRes && checkRes.ok && checkRes.payload) {
+          const cloudData = typeof checkRes.payload === 'string' ? JSON.parse(checkRes.payload) : checkRes.payload;
+          if (cloudData && cloudData.teamWorkspaces) {
+            mergeCloudAndLocalData(cloudData, true);
+            hasCompletedInitialCloudLoad = true;
+          }
+        }
+      } catch (mergeErr) {
+        console.warn('Pre-save fetch warning:', mergeErr);
+      }
+
+      // BƯỚC 2: Đẩy dữ liệu đã hợp nhất đầy đủ lên Cloud
       const payload = JSON.stringify({
         teamWorkspaces: teamWorkspaces,
         whitelist: getWhitelist(),
@@ -426,7 +629,7 @@ async function syncSaveToCloud() {
     } finally {
       isSyncingToCloud = false;
     }
-  }, 800);
+  }, 600);
 }
 
 async function syncLoadFromCloud(silent = false) {
@@ -446,35 +649,13 @@ async function syncLoadFromCloud(silent = false) {
     if (res && res.ok && res.payload) {
       const cloudData = typeof res.payload === 'string' ? JSON.parse(res.payload) : res.payload;
       if (cloudData && cloudData.teamWorkspaces && typeof cloudData.teamWorkspaces === 'object') {
-        if (Array.isArray(cloudData.whitelist) && cloudData.whitelist.length > 0) {
-          saveWhitelist(cloudData.whitelist, false);
-        }
-        if (Array.isArray(cloudData.trashItems)) {
-          saveTrashItems(cloudData.trashItems, false);
-        }
-
-        // Nạp dữ liệu đồng bộ đầy đủ từ Cloud
-        teamWorkspaces = cloudData.teamWorkspaces;
-        cleanForeignLogs();
-        ensureEmployeeWorkspaceMatched();
-
-        if (teamWorkspaces[activeEmployeeId]) {
-          workspaceData = teamWorkspaces[activeEmployeeId];
-        } else {
-          const firstKey = Object.keys(teamWorkspaces)[0];
-          if (firstKey) {
-            activeEmployeeId = firstKey;
-            workspaceData = teamWorkspaces[activeEmployeeId];
-          }
-        }
-
-        localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
-        localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
-
+        mergeCloudAndLocalData(cloudData, false);
+        hasCompletedInitialCloudLoad = true;
         renderAll();
-        if (!silent) showToast('Đã đồng bộ dữ liệu mới nhất từ Cloud!', 'success');
+        if (!silent) showToast('☁️ Đã đồng bộ & hợp nhất dữ liệu mới nhất từ Cloud!', 'success');
       }
     } else if (res && res.ok && !res.payload) {
+      hasCompletedInitialCloudLoad = true;
       syncSaveToCloud();
     }
     const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
@@ -863,6 +1044,7 @@ function restoreTrashItem(trashId) {
     showToast(`♻️ Đã khôi phục cấp quyền truy cập cho email ${item.itemData.email}!`, 'success');
   }
 
+  permanentlyDeletedTrashIds.add(trashId);
   trash.splice(idx, 1);
   saveTrashItems(trash);
   renderTrashTable();
@@ -870,6 +1052,7 @@ function restoreTrashItem(trashId) {
 
 function deleteTrashItemPermanently(trashId) {
   if (!confirm('Bạn có chắc muốn xóa vĩnh viễn mục này? Hành động này sẽ không thể hoàn tác.')) return;
+  permanentlyDeletedTrashIds.add(trashId);
   const trash = getTrashItems().filter(x => x.trashId !== trashId);
   saveTrashItems(trash);
   renderTrashTable();
@@ -883,6 +1066,7 @@ function emptyTrashConfirm() {
     return;
   }
   if (!confirm(`Bạn có chắc muốn dọn sạch toàn bộ ${trash.length} mục trong Thùng rác?`)) return;
+  trash.forEach(x => { if (x.trashId) permanentlyDeletedTrashIds.add(x.trashId); });
   saveTrashItems([]);
   renderTrashTable();
   showToast('Đã dọn sạch Thùng rác!', 'success');
@@ -1235,7 +1419,7 @@ function backToEmailStep() {
   document.getElementById('login-step1-form').classList.remove('hidden');
 }
 
-function handleVerifyOTP(e) {
+async function handleVerifyOTP(e) {
   e.preventDefault();
   const enteredOTP = document.getElementById('auth-otp-input').value.trim();
   if (!enteredOTP) {
@@ -1245,6 +1429,11 @@ function handleVerifyOTP(e) {
   if (enteredOTP !== pendingOTPCode && enteredOTP !== '123456') {
     showToast('Mã OTP không chính xác! Vui lòng kiểm tra lại mã gửi về email.', 'error');
     return;
+  }
+
+  // Đảm bảo tải dữ liệu mới nhất từ Cloud về trước khi khởi tạo phiên đăng nhập để không ghi đè dữ liệu cũ
+  if (!hasCompletedInitialCloudLoad && getOTPWebhookUrl()) {
+    await syncLoadFromCloud(true);
   }
 
   const email = pendingAuthEmail;
@@ -1279,7 +1468,7 @@ function handleVerifyOTP(e) {
       const newEmpId = 'emp_' + wsId;
       teamWorkspaces[newEmpId] = {
         empId: newEmpId,
-        ownerName: `${displayName} (${email})`,
+        ownerName: displayName.includes(email) ? displayName : `${displayName} (${email})`,
         ownerEmail: email,
         position: 'Chuyên viên Pháp chế & Hồ sơ',
         updatedAt: new Date().toISOString(),
@@ -1324,7 +1513,61 @@ function handleVerifyOTP(e) {
   showToast(`Xác thực OTP thành công! Xin chào ${displayName} (${getRoleBadgeText(role, email)})`, 'success');
 }
 
+function toggleMobileSidebar() {
+  const sidebar = document.getElementById('app-sidebar');
+  const backdrop = document.getElementById('mobile-sidebar-backdrop');
+  if (!sidebar) return;
+  const isHidden = sidebar.classList.contains('-translate-x-full');
+  if (isHidden) {
+    sidebar.classList.remove('-translate-x-full');
+    if (backdrop) backdrop.classList.remove('hidden');
+  } else {
+    sidebar.classList.add('-translate-x-full');
+    if (backdrop) backdrop.classList.add('hidden');
+  }
+}
+
+function closeMobileSidebar() {
+  const sidebar = document.getElementById('app-sidebar');
+  const backdrop = document.getElementById('mobile-sidebar-backdrop');
+  if (sidebar && !sidebar.classList.contains('-translate-x-full')) {
+    sidebar.classList.add('-translate-x-full');
+  }
+  if (backdrop && !backdrop.classList.contains('hidden')) {
+    backdrop.classList.add('hidden');
+  }
+}
+
+function updateMobileBottomNav() {
+  const empBar = document.getElementById('mobile-bottom-nav-emp');
+  const mgrBar = document.getElementById('mobile-bottom-nav-mgr');
+  if (isManager(currentUser)) {
+    if (empBar) empBar.classList.add('hidden');
+    if (mgrBar) mgrBar.classList.remove('hidden');
+    ['infographic', 'journal', 'grading'].forEach(sec => {
+      const btn = document.getElementById(`mnav-mgr-${sec}`);
+      if (btn) {
+        btn.className = (activeTab === 'team' && activeManagerSection === sec)
+          ? 'flex flex-col items-center justify-center py-1 px-2 text-[#9e0b22] font-bold text-[10px] transition'
+          : 'flex flex-col items-center justify-center py-1 px-2 text-slate-500 font-medium text-[10px] transition';
+      }
+    });
+  } else {
+    if (empBar) empBar.classList.remove('hidden');
+    if (mgrBar) mgrBar.classList.add('hidden');
+    ['overview', 'dossiers', 'schedule', 'journal', 'report'].forEach(tab => {
+      const btn = document.getElementById(`mnav-${tab}`);
+      if (btn) {
+        btn.className = (activeTab === tab)
+          ? 'flex flex-col items-center justify-center py-1 px-2 text-[#9e0b22] font-bold text-[10px] transition'
+          : 'flex flex-col items-center justify-center py-1 px-2 text-slate-500 font-medium text-[10px] transition';
+      }
+    });
+  }
+}
+
 function logoutUser() {
+  closeMobileSidebar();
   localStorage.removeItem(STORAGE_KEYS.USER);
   document.getElementById('auth-email').value = currentUser.email || '';
   hideWhitelistError();
@@ -1401,6 +1644,7 @@ function updateUserUI() {
     if (mgrHeaderActions) mgrHeaderActions.classList.add('hidden');
     if (empKpiStrip) empKpiStrip.classList.remove('hidden');
   }
+  updateMobileBottomNav();
 }
 
 // Mở trực tiếp Google Drive, Gmail, Docs, Sheets theo đúng Email cá nhân đang đăng nhập
@@ -1422,7 +1666,10 @@ function openPersonalGoogleApp(appType) {
 // ==========================================
 // 6. NAVIGATION & WEEK FILTERING
 // ==========================================
+let isAllWeeksView = false;
+
 function switchTab(tabId) {
+  closeMobileSidebar();
   if (tabId === 'team' && !isManager(currentUser)) {
     showToast('⛔ Tài khoản Nhân viên không có quyền truy cập trang Giám sát của Quản lý!', 'error');
     tabId = 'overview';
@@ -1475,10 +1722,12 @@ function switchTab(tabId) {
     }
   }
 
+  updateMobileBottomNav();
   renderAll();
 }
 
 function switchManagerSection(secId) {
+  closeMobileSidebar();
   // Đảm bảo tab team hiển thị
   activeTab = 'team';
   const tabs = ['overview', 'dossiers', 'schedule', 'report', 'journal', 'team'];
@@ -1517,6 +1766,7 @@ function switchManagerSection(secId) {
   if (titleEl && titles[secId]) titleEl.textContent = titles[secId][0];
   if (subEl && titles[secId]) subEl.textContent = titles[secId][1];
 
+  updateMobileBottomNav();
   renderTeamTab();
 }
 
@@ -1536,25 +1786,102 @@ function setManagerDailyToday() {
   renderTeamTab();
 }
 
+function syncDailyDateWithSelectedWeek() {
+  const input = document.getElementById('mgr-daily-date');
+  if (!input) return;
+  if (currentWeekOffset === 0) {
+    input.value = toISODateString(new Date());
+    return;
+  }
+  const mon = getMondayOfWeek(currentWeekOffset);
+  const sun = getSundayOfWeek(mon);
+  const monStr = toISODateString(mon);
+  const sunStr = toISODateString(sun);
+
+  // Tìm ngày gần nhất trong tuần đó có phát sinh công việc hoặc nhật ký
+  let bestDate = null;
+  Object.values(teamWorkspaces).forEach(ws => {
+    (ws.tasks || []).forEach(t => {
+      if (t.assignedDate >= monStr && t.assignedDate <= sunStr) {
+        if (!bestDate || t.assignedDate > bestDate) bestDate = t.assignedDate;
+      }
+    });
+    (ws.activityLogs || []).forEach(l => {
+      const dStr = l.dateStr || (l.timestamp ? l.timestamp.slice(0, 10) : '');
+      if (dStr >= monStr && dStr <= sunStr) {
+        if (!bestDate || dStr > bestDate) bestDate = dStr;
+      }
+    });
+  });
+
+  if (bestDate) {
+    input.value = bestDate;
+  } else {
+    // Mặc định chọn Thứ Sáu của tuần đó (hoặc Thứ Hai)
+    const fri = new Date(mon);
+    fri.setDate(mon.getDate() + 4);
+    input.value = toISODateString(fri);
+  }
+}
+
 function changeWeek(delta) {
+  isAllWeeksView = false;
   currentWeekOffset += delta;
+  syncDailyDateWithSelectedWeek();
   renderAll();
 }
 
 function resetToCurrentWeek() {
+  isAllWeeksView = false;
   currentWeekOffset = 0;
+  syncDailyDateWithSelectedWeek();
   renderAll();
 }
 
-// Get tasks belonging to the currently selected week
+function toggleAllWeeksView() {
+  isAllWeeksView = !isAllWeeksView;
+  renderAll();
+  if (isAllWeeksView) {
+    showToast('📂 Đang hiển thị TOÀN BỘ hồ sơ của tất cả các tuần!', 'info');
+  } else {
+    showToast(`📅 Đang hiển thị theo ${getWeekRangeDisplay(currentWeekOffset)}`, 'info');
+  }
+}
+
+function isTaskInSelectedWeekOrCarriedOver(t, mon, sun) {
+  if (!t) return false;
+  if (isAllWeeksView) return true;
+  const dayFilter = document.getElementById('filter-day')?.value;
+  if (dayFilter === 'all_weeks') return true;
+
+  const assignDate = t.assignedDate ? new Date(t.assignedDate + 'T00:00:00') : null;
+  const deadlineDate = t.deadline ? new Date(t.deadline) : null;
+
+  // 1. Hồ sơ được tiếp nhận trong tuần đang chọn
+  const assignedInWeek = assignDate && assignDate >= mon && assignDate <= sun;
+  // 2. Hồ sơ có hạn hoàn thành (Deadline) nằm trong tuần đang chọn
+  const deadlineInWeek = deadlineDate && deadlineDate >= mon && deadlineDate <= sun;
+  // 3. TỰ ĐỘNG CHUYỂN TIẾP HỒ SƠ CHƯA XONG / QUÁ HẠN TỪ TUẦN TRƯỚC SANG TUẦN HIỆN TẠI:
+  // Nếu hồ sơ khởi tạo ở tuần trước mà chưa hoàn thành (status !== 'completed'),
+  // bắt buộc giữ lại ở tuần hiện tại để cảnh báo "Quá hạn / Tồn đọng" cho Nhân viên và Quản lý!
+  const carriedOverUnfinished = (currentWeekOffset >= 0) && assignDate && (assignDate < mon) && (t.status !== 'completed');
+
+  return Boolean(assignedInWeek || deadlineInWeek || carriedOverUnfinished);
+}
+
+function isTaskCarriedOverFromPastWeek(t) {
+  if (!t || !t.assignedDate) return false;
+  const mon = getMondayOfWeek(currentWeekOffset);
+  const assignDate = new Date(t.assignedDate + 'T00:00:00');
+  return assignDate < mon && t.status !== 'completed';
+}
+
+// Get tasks belonging to the currently selected week (plus carried-over overdue/unfinished tasks)
 function getTasksForSelectedWeek() {
+  if (!workspaceData || !Array.isArray(workspaceData.tasks)) return [];
   const mon = getMondayOfWeek(currentWeekOffset);
   const sun = getSundayOfWeek(mon);
-
-  return workspaceData.tasks.filter(t => {
-    const assignDate = new Date(t.assignedDate + 'T00:00:00');
-    return assignDate >= mon && assignDate <= sun;
-  });
+  return workspaceData.tasks.filter(t => isTaskInSelectedWeekOrCarriedOver(t, mon, sun));
 }
 
 // ==========================================
@@ -1625,7 +1952,16 @@ function goToPage(key, pageNum) {
 }
 
 function renderAll() {
-  document.getElementById('current-week-label').textContent = getWeekRangeDisplay(currentWeekOffset);
+  const weekLabelEl = document.getElementById('current-week-label');
+  if (weekLabelEl) {
+    weekLabelEl.textContent = isAllWeeksView ? '📂 Tất cả các tuần (Toàn bộ lịch sử)' : getWeekRangeDisplay(currentWeekOffset);
+  }
+  const btnAllWeeks = document.getElementById('btn-all-weeks');
+  if (btnAllWeeks) {
+    btnAllWeeks.className = isAllWeeksView
+      ? 'ml-1 px-2.5 py-0.5 text-[11px] bg-brand-600 text-white rounded shadow-sm font-bold transition'
+      : 'ml-1 px-2.5 py-0.5 text-[11px] bg-white text-slate-600 rounded shadow-sm hover:text-brand-600 font-semibold transition';
+  }
   renderHeaderEmployeeSwitcher();
 
   const weekTasks = getTasksForSelectedWeek();
@@ -1758,14 +2094,19 @@ function renderOverviewTab(weekTasks) {
       const eff = getEffectiveStatus(task);
       const statusBadge = getStatusBadgeHTML(eff);
       const priorityBadge = getPriorityBadgeHTML(task.priority);
+      const isCarried = isTaskCarriedOverFromPastWeek(task);
+      const carriedBadge = isCarried
+        ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-300">🔄 Tồn đọng từ ${formatVNDate(task.assignedDate)}</span>`
+        : '';
 
       return `
-        <div class="p-3.5 rounded-xl border border-slate-200/80 hover:border-brand-300 bg-slate-50/50 hover:bg-white transition flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="p-3.5 rounded-xl border ${isCarried ? 'border-rose-300 bg-rose-50/40' : 'border-slate-200/80 bg-slate-50/50'} hover:border-brand-300 hover:bg-white transition flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div class="space-y-1 min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-brand-700 border border-indigo-200/60">${escapeHtml(task.code)}</span>
               ${priorityBadge}
               ${statusBadge}
+              ${carriedBadge}
               <span class="text-[11px] text-slate-400">• Tiếp nhận: ${getDayOfWeekLabel(task.assignedDate)} (${formatVNDate(task.assignedDate)})</span>
             </div>
             <p class="text-xs font-bold text-slate-900 truncate">${escapeHtml(task.title)}</p>
@@ -1866,7 +2207,9 @@ function renderDossierTable(weekTasks) {
     const matchPriority = priorityFilter === 'all' || t.priority === priorityFilter;
 
     let matchDay = true;
-    if (dayFilter !== 'all') {
+    if (dayFilter === 'carried_over') {
+      matchDay = isTaskCarriedOverFromPastWeek(t);
+    } else if (dayFilter !== 'all' && dayFilter !== 'all_weeks') {
       const d = new Date(t.assignedDate + 'T00:00:00');
       matchDay = String(d.getDay()) === dayFilter;
     }
@@ -1890,10 +2233,12 @@ function renderDossierTable(weekTasks) {
 
   tbody.innerHTML = pagedFiltered.map(task => {
     const eff = getEffectiveStatus(task);
+    const isCarried = isTaskCarriedOverFromPastWeek(task);
     return `
-      <tr class="hover:bg-rose-50/30 transition align-middle">
+      <tr class="hover:bg-rose-50/30 ${isCarried ? 'bg-rose-50/20' : ''} transition align-middle">
         <td class="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap">
-          ${escapeHtml(task.code)}
+          <div>${escapeHtml(task.code)}</div>
+          ${isCarried ? `<span class="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-300">🔄 Tồn đọng (${formatVNDate(task.assignedDate)})</span>` : `<div class="text-[10px] text-slate-400 font-normal">Giao: ${formatVNDate(task.assignedDate)}</div>`}
         </td>
 
         <td class="py-3.5 px-3 text-slate-700 font-medium">
@@ -2463,10 +2808,7 @@ function renderJournalTab() {
 function getWeekTasksFromList(tasksList) {
   const mon = getMondayOfWeek(currentWeekOffset);
   const sun = getSundayOfWeek(mon);
-  return (tasksList || []).filter(t => {
-    const assignDate = new Date(t.assignedDate + 'T00:00:00');
-    return assignDate >= mon && assignDate <= sun;
-  });
+  return (tasksList || []).filter(t => isTaskInSelectedWeekOrCarriedOver(t, mon, sun));
 }
 
 function setDailyDateFilter(dateStr) {
@@ -2824,6 +3166,18 @@ function renderTeamTab() {
   // 7. Render Employee Journal Live Feed (in Section 2)
   const feedContainer = document.getElementById('team-live-feed-container');
   if (feedContainer) {
+    const timeFilter = document.getElementById('mgr-journal-time-filter')?.value || 'all';
+    const typeFilter = document.getElementById('mgr-journal-type-filter')?.value || 'all';
+    const searchVal = (document.getElementById('mgr-journal-search')?.value || '').trim().toLowerCase();
+
+    const sun = getSundayOfWeek(mon);
+    const monStr = toISODateString(mon);
+    const sunStr = toISODateString(sun);
+    const lastWeekMon = getMondayOfWeek(-1);
+    const lastWeekSun = getSundayOfWeek(lastWeekMon);
+    const lastMonStr = toISODateString(lastWeekMon);
+    const lastSunStr = toISODateString(lastWeekSun);
+
     const allLogs = [];
     entries.forEach(([empId, ws]) => {
       if (currentFilterVal !== 'all' && currentFilterVal !== empId) return;
@@ -2837,18 +3191,49 @@ function renderTeamTab() {
             return;
           }
         }
+
+        const logDate = log.dateStr || (log.timestamp ? log.timestamp.slice(0, 10) : '');
+        if (timeFilter === 'selected_week' && !isAllWeeksView) {
+          if (logDate < monStr || logDate > sunStr) return;
+        } else if (timeFilter === 'last_week') {
+          if (logDate < lastMonStr || logDate > lastSunStr) return;
+        } else if (timeFilter === 'today') {
+          if (logDate !== todayStr) return;
+        }
+
+        if (typeFilter === 'dossier') {
+          if (!['created', 'updated', 'completed', 'deleted'].includes(log.type)) return;
+        } else if (typeFilter === 'adhoc') {
+          if (!['boss_task', 'personal_task', 'note'].includes(log.type)) return;
+        } else if (typeFilter === 'reviewed') {
+          if (log.type !== 'reviewed') return;
+        } else if (typeFilter === 'login') {
+          if (log.type !== 'login') return;
+        }
+
+        if (searchVal) {
+          const hay = `${ws.ownerName || ''} ${ws.ownerEmail || ''} ${log.code || ''} ${log.title || ''} ${log.detail || ''} ${log.actor || ''}`.toLowerCase();
+          if (!hay.includes(searchVal)) return;
+        }
+
         allLogs.push({ empId, empName: ws.ownerName, empEmail: ws.ownerEmail, ...log });
       });
     });
     allLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    const countBadgeEl = document.getElementById('mgr-journal-total-badge');
+    if (countBadgeEl) {
+      countBadgeEl.textContent = `${allLogs.length} hoạt động`;
+    }
+
     const pagedTeamLogs = paginateItems(allLogs, 'teamFeed', 'team-feed-pagination', 'hoạt động');
 
     if (allLogs.length === 0) {
-      feedContainer.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">Chưa có hoạt động nào được ghi nhận.</p>`;
+      feedContainer.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">Chưa có hoạt động nào khớp với bộ lọc hiện tại. Hãy chọn "Toàn bộ lịch sử (Tất cả các tuần)" để xem toàn bộ nhật ký.</p>`;
     } else {
       const typeMeta = {
         login: { badge: '🔐 Đăng nhập OTP', color: 'bg-blue-50 text-blue-700 border-blue-200' },
-        created: { badge: 'Khởi tạo hồ sơ', color: 'bg-brand-50 text-brand-700 border-brand-200' },
+        created: { badge: '📁 Khởi tạo hồ sơ', color: 'bg-brand-50 text-brand-700 border-brand-200' },
         boss_task: { badge: '👔 Việc Sếp giao phát sinh', color: 'bg-rose-100 text-brand-800 border-brand-300' },
         personal_task: { badge: '📌 Việc cá nhân tự ghi', color: 'bg-blue-50 text-blue-800 border-blue-200' },
         updated: { badge: '✏️ Đang xử lý / Sửa', color: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -2861,23 +3246,24 @@ function renderTeamTab() {
       feedContainer.innerHTML = pagedTeamLogs.map(item => {
         const meta = typeMeta[item.type] || typeMeta.created;
         const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--';
-        const dateStr = formatVNDate(item.dateStr);
+        const dRaw = item.dateStr || (item.timestamp ? item.timestamp.slice(0, 10) : '');
+        const dateStr = formatVNDate(dRaw);
+        const dayLbl = dRaw ? getDayOfWeekLabel(dRaw) : '';
         return `
           <div class="p-3 rounded-xl bg-slate-50/90 border border-slate-200/80 hover:bg-white transition flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-            <div class="space-y-0.5">
-              <div class="flex flex-wrap items-center gap-2">
+            <div class="space-y-0.5 min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <span class="font-bold text-slate-900 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-sm">${escapeHtml(item.empName)}</span>
-                <span class="text-[10px] text-slate-400 font-mono">(${escapeHtml(item.empEmail)})</span>
                 <span class="text-[10px] font-semibold px-2 py-0.5 rounded border ${meta.color}">${meta.badge}</span>
                 <span class="font-mono text-[11px] font-bold text-brand-700">${escapeHtml(item.code)}</span>
                 ${item.actor ? `<span class="text-[10px] text-slate-500 font-medium">Bởi: <strong class="text-slate-700">${escapeHtml(item.actor)}</strong></span>` : ''}
               </div>
-              <p class="font-semibold text-slate-800 mt-1">${escapeHtml(item.title)}</p>
-              ${item.detail ? `<p class="text-[11px] text-slate-500">${escapeHtml(item.detail)}</p>` : ''}
+              <p class="font-semibold text-slate-800 mt-1 break-words">${escapeHtml(item.title)}</p>
+              ${item.detail ? `<p class="text-[11px] text-slate-500 break-words">${escapeHtml(item.detail)}</p>` : ''}
             </div>
-            <div class="text-right shrink-0">
-              <span class="text-[11px] font-mono font-bold text-slate-600 block">${timeStr}</span>
-              <span class="text-[10px] text-slate-400">${dateStr}</span>
+            <div class="sm:text-right shrink-0 flex sm:flex-col items-center sm:items-end justify-between border-t sm:border-t-0 pt-1.5 sm:pt-0 border-slate-200/60">
+              <span class="text-[11px] font-mono font-bold text-slate-700 block">${timeStr}</span>
+              <span class="text-[10px] text-slate-500 font-medium">${dayLbl ? dayLbl + ', ' : ''}${dateStr}</span>
             </div>
           </div>
         `;
@@ -2946,18 +3332,22 @@ function renderTeamTab() {
   if (tbody) {
     const pagedAllRows = paginateItems(allRows, 'teamTasks', 'team-tasks-pagination', 'hồ sơ');
     if (allRows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">Chưa có hồ sơ nào trong tuần của nhóm nhân viên đang chọn.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">Chưa có hồ sơ nào trong tuần của nhóm nhân viên đang chọn. Nhấn "📂 Tất cả các tuần" trên thanh lịch để xem toàn bộ lịch sử hồ sơ.</td></tr>`;
     } else {
       tbody.innerHTML = pagedAllRows.map(({ empId, empName, task }) => {
         const eff = getEffectiveStatus(task);
+        const isCarried = isTaskCarriedOverFromPastWeek(task);
         return `
-          <tr class="hover:bg-slate-50 transition align-middle">
+          <tr class="hover:bg-slate-50 ${isCarried ? 'bg-rose-50/20' : ''} transition align-middle">
             <td class="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">
               ${escapeHtml(empName)}
             </td>
             <td class="py-3 px-4">
-              <span class="font-mono text-[10px] font-bold text-brand-700 bg-indigo-50 px-1.5 py-0.5 rounded mr-1">${escapeHtml(task.code)}</span>
-              <span class="font-semibold text-slate-900">${escapeHtml(task.title)}</span>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="font-mono text-[10px] font-bold text-brand-700 bg-indigo-50 px-1.5 py-0.5 rounded">${escapeHtml(task.code)}</span>
+                ${isCarried ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-300">🔄 Tồn đọng từ ${formatVNDate(task.assignedDate)}</span>` : ''}
+                <span class="font-semibold text-slate-900">${escapeHtml(task.title)}</span>
+              </div>
               ${task.link ? `<div class="mt-1"><a href="${escapeHtml(task.link)}" target="_blank" class="text-blue-600 hover:underline font-semibold text-[11px] inline-flex items-center gap-1">🔗 Mở file Drive của NV</a></div>` : ''}
               ${task.notes ? `<p class="text-[11px] text-slate-500 italic mt-0.5">"${escapeHtml(task.notes)}"</p>` : ''}
             </td>
@@ -3330,7 +3720,7 @@ function handleTaskSubmit(e) {
         ? `Thay đổi: ${changes.join(' | ')}`
         : `Cập nhật hồ sơ (${payload.progress}%) — Ghi chú: ${payload.notes || 'Không đổi'}`;
 
-      workspaceData.tasks[idx] = { ...oldTask, ...payload };
+      workspaceData.tasks[idx] = { ...oldTask, ...payload, updatedAt: new Date().toISOString() };
       recordJournalLog(
         payload.status === 'completed' ? 'completed' : 'updated',
         payload.code,
@@ -3343,6 +3733,7 @@ function handleTaskSubmit(e) {
     const newTask = {
       id: 'task_' + Date.now(),
       ...payload,
+      updatedAt: new Date().toISOString(),
       rating: null,
       approval: '',
       managerFeedback: ''
@@ -3366,6 +3757,7 @@ function handleTaskSubmit(e) {
 function quickToggleComplete(taskId) {
   const task = workspaceData.tasks.find(t => t.id === taskId);
   if (!task) return;
+  task.updatedAt = new Date().toISOString();
   if (task.status === 'completed') {
     task.status = 'in_progress';
     task.progress = 50;
@@ -3433,6 +3825,7 @@ function handleReviewSubmit(e) {
   task.rating = Number(document.getElementById('review-rating').value);
   task.approval = document.getElementById('review-approval').value;
   task.managerFeedback = document.getElementById('review-feedback').value.trim();
+  task.updatedAt = new Date().toISOString();
 
   recordJournalLog(
     'reviewed',
@@ -3620,13 +4013,26 @@ function exportCSV() {
 }
 
 function exportJSONBackup() {
-  const blob = new Blob([JSON.stringify(workspaceData, null, 2)], { type: 'application/json' });
+  if (activeEmployeeId && teamWorkspaces[activeEmployeeId]) {
+    teamWorkspaces[activeEmployeeId] = workspaceData;
+  }
+  const fullBackup = {
+    version: '2.0',
+    exportedAt: new Date().toISOString(),
+    exportedBy: currentUser ? currentUser.email : 'system',
+    activeEmployeeId,
+    teamWorkspaces,
+    whitelist: getEmailWhitelist(),
+    trashItems: getTrashItems(),
+    workspaceData
+  };
+  const blob = new Blob([JSON.stringify(fullBackup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `WorkFlowPro_Backup_${toISODateString(new Date())}.json`;
+  a.download = `WorkFlowPro_FullBackup_${toISODateString(new Date())}.json`;
   a.click();
-  showToast('Đã tải xuống file dữ liệu .json', 'success');
+  showToast('Đã tải xuống file sao lưu toàn hệ thống (.json)!', 'success');
 }
 
 function importJSONBackup(event) {
@@ -3636,12 +4042,21 @@ function importJSONBackup(event) {
   reader.onload = (e) => {
     try {
       const imported = JSON.parse(e.target.result);
-      if (imported && Array.isArray(imported.tasks)) {
+      if (imported && imported.teamWorkspaces) {
+        mergeCloudAndLocalData(imported, false);
+        saveWorkspaceData();
+        renderAll();
+        closeShareModal();
+        showToast('Đã khôi phục và gộp dữ liệu toàn hệ thống thành công!', 'success');
+      } else if (imported && Array.isArray(imported.tasks)) {
         workspaceData = imported;
+        if (activeEmployeeId) teamWorkspaces[activeEmployeeId] = workspaceData;
         saveWorkspaceData();
         renderAll();
         closeShareModal();
         showToast('Đã khôi phục dữ liệu hồ sơ thành công!', 'success');
+      } else {
+        showToast('Cấu trúc file JSON không hợp lệ!', 'error');
       }
     } catch (err) {
       showToast('File JSON không hợp lệ!', 'error');
