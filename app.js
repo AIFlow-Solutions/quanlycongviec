@@ -2310,7 +2310,12 @@ function renderKPICards(weekTasks) {
   });
 
   const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
-  const avgRating = ratedCount > 0 ? (ratedSum / ratedCount).toFixed(1) : '--';
+  const wk = getWeekKey(currentWeekOffset);
+  const wkRev = workspaceData && workspaceData.weeklyReviews && workspaceData.weeklyReviews[wk];
+  let avgRating = ratedCount > 0 ? (ratedSum / ratedCount).toFixed(1) : '--';
+  if (ratedCount === 0 && wkRev && wkRev.rating) {
+    avgRating = Number(wkRev.rating).toFixed(1);
+  }
 
   document.getElementById('stat-total').textContent = total;
   document.getElementById('stat-inprogress').textContent = inProgress;
@@ -2318,7 +2323,9 @@ function renderKPICards(weekTasks) {
   document.getElementById('stat-rate').textContent = `Tỷ lệ hoàn thành: ${rate}%`;
   document.getElementById('stat-overdue').textContent = overdueOrUrgent;
   document.getElementById('stat-rating').textContent = `${avgRating} / 5★`;
-  document.getElementById('stat-reviewed-count').textContent = `${ratedCount}/${total} hồ sơ đã chấm`;
+  document.getElementById('stat-reviewed-count').textContent = wkRev
+    ? `🏆 Đánh giá tuần: ${wkRev.grade.split(' ')[0]}`
+    : `${ratedCount}/${total} hồ sơ đã chấm`;
 }
 
 // ==========================================
@@ -2392,12 +2399,15 @@ function renderOverviewTab(weekTasks) {
   const commentEl = document.getElementById('week-review-comment');
   const scoreEl = document.getElementById('week-review-score');
   const byEl = document.getElementById('week-review-by');
+  const ovBtn = document.getElementById('overview-weekly-review-btn');
+  if (ovBtn) ovBtn.classList.toggle('hidden', !isManager(currentUser));
 
   if (review) {
-    badgeEl.textContent = 'Đã đánh giá';
+    const starsStr = review.rating ? ` (${'★'.repeat(Number(review.rating))})` : '';
+    badgeEl.textContent = `Đã đánh giá tuần${starsStr}`;
     badgeEl.className = 'text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-semibold';
     commentEl.textContent = `"${review.comment}"`;
-    scoreEl.textContent = `Xếp loại: ${review.grade}`;
+    scoreEl.textContent = `Xếp loại: ${review.grade}${starsStr}`;
     byEl.textContent = `Người chấm: ${review.reviewer || 'Quản lý'}`;
   } else {
     badgeEl.textContent = 'Chưa đánh giá';
@@ -2618,15 +2628,18 @@ function renderWeeklyReportTab(weekTasks) {
 
   // Manager Review Box in Report
   const revBox = document.getElementById('report-manager-review-box');
+  const repBtn = document.getElementById('report-weekly-review-btn');
+  if (repBtn) repBtn.classList.toggle('hidden', !isManager(currentUser));
   const rev = workspaceData.weeklyReviews && workspaceData.weeklyReviews[wk];
   if (rev) {
+    const starsStr = rev.rating ? ` • <span class="text-amber-600 font-bold">${'★'.repeat(Number(rev.rating))} (${rev.rating}/5)</span>` : '';
     revBox.innerHTML = `
-      <div class="font-bold text-blue-900">Xếp loại tuần: ${escapeHtml(rev.grade)}</div>
+      <div class="font-bold text-blue-900">Xếp loại tuần: ${escapeHtml(rev.grade)}${starsStr}</div>
       <p class="text-blue-800 italic">"${escapeHtml(rev.comment)}"</p>
       <div class="text-[11px] text-blue-700 pt-1">— Đánh giá bởi: <strong>${escapeHtml(rev.reviewer || 'Quản lý')}</strong></div>
     `;
   } else {
-    revBox.innerHTML = `<p class="text-slate-500 italic">Tuần này chưa có đánh giá tổng kết từ Quản lý. Nhấn "Chấm điểm" để cập nhật.</p>`;
+    revBox.innerHTML = `<p class="text-slate-500 italic">Tuần này chưa có đánh giá tổng kết từ Quản lý.</p>`;
   }
 
   // Category Breakdown
@@ -3126,7 +3139,13 @@ function renderTeamTab() {
 
     totalTeamAdhoc += (ws.adhocTasks || []).length;
     const weekRev = ws.weeklyReviews && ws.weeklyReviews[wk];
-    if (weekRev) reviewedMembersCount++;
+    if (weekRev) {
+      reviewedMembersCount++;
+      if (weekRev.rating) {
+        ratedStarsSum += Number(weekRev.rating);
+        ratedStarsCount++;
+      }
+    }
   });
 
   const overallRate = totalTeamTasks > 0 ? Math.round((totalTeamDone / totalTeamTasks) * 100) : 0;
@@ -3464,12 +3483,37 @@ function renderTeamTab() {
               <strong>Báo cáo NV:</strong> "${escapeHtml(ws.employeeNotes[wk])}"
             </div>
           ` : ''}
+
+          <!-- Weekly Overall Evaluation Summary Box inside Employee Card -->
+          <div class="mt-3 p-3 rounded-xl border ${weekRev ? 'bg-amber-50/70 border-amber-200' : 'bg-indigo-50/40 border-indigo-100'} text-xs">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-bold text-slate-800 flex items-center gap-1">
+                🏆 Đánh giá Tuần (Họp tuần):
+              </span>
+              ${weekRev ? `
+                <span class="font-bold text-amber-700">
+                  ${escapeHtml(weekRev.grade.split(' ')[0])} ${weekRev.rating ? `(${'★'.repeat(Number(weekRev.rating))})` : ''}
+                </span>
+              ` : `
+                <span class="text-[11px] text-slate-400 italic">Chưa đánh giá tuần này</span>
+              `}
+            </div>
+            ${weekRev && weekRev.comment ? `
+              <p class="text-[11px] text-slate-700 italic mt-1">"${escapeHtml(weekRev.comment)}"</p>
+              <p class="text-[10px] text-slate-400 mt-0.5">— ${escapeHtml(weekRev.reviewer || 'Quản lý')}</p>
+            ` : ''}
+          </div>
         </div>
 
-        <div class="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-          <button onclick="switchManagerSection('grading')" class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1 transition shadow-sm">
-            📂 Mở bảng tổng hợp & Chấm điểm (${allEmpTasks.length} HS)
-          </button>
+        <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button type="button" onclick="openWeeklyReviewModalForEmployee('${empId}')" class="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1 transition shadow-sm">
+              🏆 Đánh giá Chung Tuần
+            </button>
+            <button type="button" onclick="switchManagerSection('grading')" class="px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center gap-1 transition">
+              📂 Chi tiết (${allEmpTasks.length} HS)
+            </button>
+          </div>
           <button onclick="switchManagerSection('journal')" class="text-[11px] text-slate-500 hover:text-brand-600 font-medium flex items-center gap-1">
             <i data-lucide="history" class="w-3.5 h-3.5"></i> Xem nhật ký
           </button>
@@ -3635,7 +3679,80 @@ function renderTeamTab() {
     }
   }
 
-  // 9. Render Grading Master Table (in Section 3)
+  // 9. Render Weekly Overall Evaluation Table + Individual Dossier Grading Table (in Section 3)
+  const weeklyEvalBadge = document.getElementById('mgr-weekly-eval-week-badge');
+  if (weeklyEvalBadge) {
+    weeklyEvalBadge.textContent = getWeekRangeDisplay(currentWeekOffset);
+  }
+  const weeklyEvalTbody = document.getElementById('mgr-weekly-eval-tbody');
+  if (weeklyEvalTbody) {
+    const filteredEmpEntries = entries.filter(([empId]) => currentFilterVal === 'all' || currentFilterVal === empId);
+    if (filteredEmpEntries.length === 0) {
+      weeklyEvalTbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-slate-400">Chưa có nhân viên nào trong danh sách.</td></tr>`;
+    } else {
+      weeklyEvalTbody.innerHTML = filteredEmpEntries.map(([empId, ws]) => {
+        const allTasks = Array.isArray(ws.tasks) ? ws.tasks : [];
+        const wTasks = getWeekTasksFromList(allTasks);
+        const listForSummary = wTasks.length > 0 ? wTasks : allTasks;
+        const doneCnt = listForSummary.filter(t => getEffectiveStatus(t) === 'completed').length;
+        const progCnt = listForSummary.filter(t => getEffectiveStatus(t) === 'in_progress').length;
+        const overCnt = listForSummary.filter(t => getEffectiveStatus(t) === 'overdue').length;
+        const adhocCnt = (ws.adhocTasks || []).length;
+        const rev = ws.weeklyReviews && ws.weeklyReviews[wk];
+        const empNote = ws.employeeNotes && ws.employeeNotes[wk];
+
+        return `
+          <tr class="hover:bg-indigo-50/30 transition align-middle">
+            <td class="py-3.5 px-4">
+              <div class="font-bold text-slate-900">${escapeHtml(ws.ownerName)}</div>
+              <div class="text-[11px] font-mono text-slate-500">${escapeHtml(ws.ownerEmail)}</div>
+            </td>
+            <td class="py-3.5 px-4">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">✅ Xong: ${doneCnt}/${listForSummary.length} HS</span>
+                <span class="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-semibold text-[11px]">⚡ Đang làm: ${progCnt}</span>
+                ${overCnt > 0 ? `<span class="px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px]">🚨 Quá hạn: ${overCnt}</span>` : ''}
+                <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold text-[11px]">📌 Việc phát sinh: ${adhocCnt}</span>
+              </div>
+              ${listForSummary.length > 0 ? `
+                <div class="text-[11px] text-slate-600 mt-1.5 space-y-0.5">
+                  ${listForSummary.slice(0, 3).map(t => `<div class="truncate">• <strong class="font-mono text-brand-700">[${escapeHtml(t.code)}]</strong> ${escapeHtml(t.title)} (${t.progress}%)</div>`).join('')}
+                  ${listForSummary.length > 3 ? `<div class="text-[10px] text-slate-400 italic">+ ${listForSummary.length - 3} hồ sơ khác...</div>` : ''}
+                </div>
+              ` : `<div class="text-[11px] text-slate-400 italic mt-1">Chưa có hồ sơ trong tuần</div>`}
+              ${empNote ? `<div class="mt-1 p-1.5 rounded bg-slate-50 border border-slate-200 text-[11px] text-slate-600 italic"><strong>Báo cáo NV:</strong> "${escapeHtml(empNote)}"</div>` : ''}
+            </td>
+            <td class="py-3.5 px-3 whitespace-nowrap">
+              ${rev ? `
+                <span class="inline-flex items-center px-2.5 py-1 rounded-lg font-bold text-xs bg-amber-100 text-amber-900 border border-amber-300">
+                  🏆 ${escapeHtml(rev.grade)}
+                </span>
+                ${rev.rating ? `<div class="text-amber-600 font-bold text-xs mt-1">${'★'.repeat(Number(rev.rating))} (${rev.rating}/5 Sao)</div>` : ''}
+              ` : `
+                <span class="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100 text-slate-500">
+                  Chưa đánh giá tuần
+                </span>
+              `}
+            </td>
+            <td class="py-3.5 px-4">
+              ${rev && rev.comment ? `
+                <p class="font-semibold text-slate-800 italic">"${escapeHtml(rev.comment)}"</p>
+                <p class="text-[10px] text-slate-500 mt-0.5">Người đánh giá: <strong>${escapeHtml(rev.reviewer || 'Quản lý')}</strong></p>
+              ` : `
+                <span class="text-slate-400 italic">Nhấn "Đánh giá Chung Tuần" để nhập nhận xét kết luận buổi họp tuần.</span>
+              `}
+            </td>
+            <td class="py-3.5 px-4 text-right whitespace-nowrap">
+              <button type="button" onclick="openWeeklyReviewModalForEmployee('${empId}')" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm transition inline-flex items-center gap-1.5">
+                🏆 ${rev ? 'Sửa Đánh giá Tuần' : 'Đánh giá Chung Tuần'}
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+
   const taskTimeFilter = document.getElementById('mgr-task-time-filter')?.value || 'all';
   const taskStatusFilter = document.getElementById('mgr-task-status-filter')?.value || 'all';
   let totalAllEmpDossiersCount = 0;
@@ -4171,16 +4288,103 @@ function handleReviewSubmit(e) {
   showToast(`Đã lưu đánh giá ${task.rating}★ cho hồ sơ ${task.code}`, 'success');
 }
 
-function openWeeklyReviewModal() {
+function setWeeklyReviewStars(num) {
+  const ratingInput = document.getElementById('weekly-rating');
+  if (ratingInput) ratingInput.value = num;
+  const txt = document.getElementById('weekly-star-rating-text');
+  if (txt) txt.textContent = `${num} / 5 Sao`;
+  const btns = document.querySelectorAll('#weekly-star-selector .weekly-star-btn');
+  btns.forEach((btn, idx) => {
+    btn.classList.toggle('selected', idx < num);
+    btn.style.opacity = idx < num ? '1' : '0.35';
+  });
+}
+
+function openWeeklyReviewModalForEmployee(empId) {
+  if (empId && teamWorkspaces[empId]) {
+    activeEmployeeId = empId;
+    workspaceData = teamWorkspaces[empId];
+    renderHeaderEmployeeSwitcher();
+  }
+  openWeeklyReviewModal(empId);
+}
+
+function openWeeklyReviewModal(empId = null) {
+  const targetEmpId = (empId && teamWorkspaces[empId]) ? empId : activeEmployeeId;
+  const targetWs = (targetEmpId && teamWorkspaces[targetEmpId]) ? teamWorkspaces[targetEmpId] : workspaceData;
+  if (!targetWs) return;
+
+  const empIdInput = document.getElementById('weekly-review-emp-id');
+  if (empIdInput) empIdInput.value = targetEmpId || '';
+
   const wk = getWeekKey(currentWeekOffset);
-  const existing = workspaceData.weeklyReviews && workspaceData.weeklyReviews[wk];
+  const weekLbl = document.getElementById('weekly-review-week-label');
+  if (weekLbl) {
+    weekLbl.textContent = `${getWeekRangeDisplay(currentWeekOffset)} — Nhân sự: ${targetWs.ownerName}`;
+  }
+
+  // Render summary of employee's weekly work inside the modal for the weekly meeting
+  const summaryBox = document.getElementById('weekly-review-summary-box');
+  if (summaryBox) {
+    const allTasks = Array.isArray(targetWs.tasks) ? targetWs.tasks : [];
+    const wTasks = getWeekTasksFromList(allTasks);
+    const displayList = wTasks.length > 0 ? wTasks : allTasks;
+    const doneCnt = displayList.filter(t => getEffectiveStatus(t) === 'completed').length;
+    const progCnt = displayList.filter(t => getEffectiveStatus(t) === 'in_progress').length;
+    const overCnt = displayList.filter(t => getEffectiveStatus(t) === 'overdue').length;
+    const adhocCnt = (targetWs.adhocTasks || []).length;
+    const empNote = targetWs.employeeNotes && targetWs.employeeNotes[wk];
+
+    summaryBox.innerHTML = `
+      <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+        <div>
+          <div class="font-bold text-slate-900 text-xs">${escapeHtml(targetWs.ownerName)}</div>
+          <div class="text-[11px] font-mono text-slate-500">${escapeHtml(targetWs.ownerEmail)}</div>
+        </div>
+        <span class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-xs">
+          Hoàn thành: ${doneCnt}/${displayList.length} hồ sơ
+        </span>
+      </div>
+      <div class="grid grid-cols-3 gap-2 pt-1 text-center text-[11px]">
+        <div class="p-1.5 rounded-lg bg-white border border-slate-200">
+          <span class="text-slate-500 block">Đang xử lý</span>
+          <strong class="text-blue-700 text-xs">${progCnt}</strong>
+        </div>
+        <div class="p-1.5 rounded-lg bg-white border border-slate-200">
+          <span class="text-slate-500 block">Quá hạn</span>
+          <strong class="${overCnt > 0 ? 'text-rose-600' : 'text-slate-700'} text-xs">${overCnt}</strong>
+        </div>
+        <div class="p-1.5 rounded-lg bg-white border border-slate-200">
+          <span class="text-slate-500 block">Việc phát sinh</span>
+          <strong class="text-indigo-700 text-xs">${adhocCnt}</strong>
+        </div>
+      </div>
+      ${displayList.length > 0 ? `
+        <div class="pt-1.5 space-y-1 max-h-28 overflow-y-auto text-[11px] text-slate-700">
+          ${displayList.map(t => `
+            <div class="flex items-center justify-between gap-2 bg-white px-2 py-1 rounded border border-slate-200/70">
+              <span class="truncate"><strong class="font-mono text-brand-700">[${escapeHtml(t.code)}]</strong> ${escapeHtml(t.title)}</span>
+              <span class="shrink-0 font-bold ${t.status === 'completed' ? 'text-emerald-700' : 'text-blue-700'}">${t.progress}%</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${empNote ? `<div class="pt-1 text-[11px] text-slate-600 italic"><strong>Báo cáo tuần của NV:</strong> "${escapeHtml(empNote)}"</div>` : ''}
+    `;
+  }
+
+  const existing = targetWs.weeklyReviews && targetWs.weeklyReviews[wk];
   if (existing) {
     document.getElementById('weekly-grade').value = existing.grade;
     document.getElementById('weekly-comment-input').value = existing.comment;
+    setWeeklyReviewStars(existing.rating || 5);
   } else {
+    document.getElementById('weekly-grade').value = 'A (Tốt - Đúng hạn 100%)';
     document.getElementById('weekly-comment-input').value = '';
+    setWeeklyReviewStars(5);
   }
   document.getElementById('weekly-review-modal').classList.remove('hidden');
+  lucide.createIcons();
 }
 
 function closeWeeklyReviewModal() {
@@ -4189,20 +4393,52 @@ function closeWeeklyReviewModal() {
 
 function handleWeeklyReviewSubmit(e) {
   e.preventDefault();
+  const targetEmpId = document.getElementById('weekly-review-emp-id')?.value || activeEmployeeId;
+  if (targetEmpId && teamWorkspaces[targetEmpId]) {
+    activeEmployeeId = targetEmpId;
+    workspaceData = teamWorkspaces[targetEmpId];
+  }
   const wk = getWeekKey(currentWeekOffset);
   if (!workspaceData.weeklyReviews) workspaceData.weeklyReviews = {};
 
+  const grade = document.getElementById('weekly-grade').value;
+  const rating = Number(document.getElementById('weekly-rating')?.value || 5);
+  const comment = document.getElementById('weekly-comment-input').value.trim();
+  const applyToTasks = document.getElementById('weekly-apply-to-tasks')?.checked;
+
   workspaceData.weeklyReviews[wk] = {
-    grade: document.getElementById('weekly-grade').value,
-    comment: document.getElementById('weekly-comment-input').value.trim(),
+    grade,
+    rating,
+    comment,
     reviewer: `${currentUser.name} (${getRoleBadgeText(currentUser.role, currentUser.email)})`,
     updatedAt: new Date().toISOString()
   };
 
+  // Nếu chọn "Đồng bộ điểm tuần cho các hồ sơ trong tuần", tự động gắn sao cho các hồ sơ chưa chấm của nhân viên
+  if (applyToTasks && Array.isArray(workspaceData.tasks)) {
+    const wTasks = getWeekTasksFromList(workspaceData.tasks);
+    const targetList = wTasks.length > 0 ? wTasks : workspaceData.tasks;
+    targetList.forEach(t => {
+      if (!t.rating) {
+        t.rating = rating;
+        t.approval = grade.split(' ')[0] + ' (Đánh giá chung tuần)';
+        t.managerFeedback = comment;
+        t.updatedAt = new Date().toISOString();
+      }
+    });
+  }
+
+  recordJournalLog(
+    'reviewed',
+    'ĐÁNH GIÁ TUẦN',
+    `Đánh giá chung tuần (${getWeekRangeDisplay(currentWeekOffset)}): ${grade} — ${rating}★`,
+    `Nhận xét buổi họp tuần: "${comment}"`
+  );
+
   saveWorkspaceData();
   closeWeeklyReviewModal();
   renderAll();
-  showToast('Đã cập nhật Đánh giá Tổng kết Tuần của Quản lý!', 'success');
+  showToast(`🏆 Đã lưu Đánh giá Chung Tuần (${grade} - ${rating}★) cho ${workspaceData.ownerName}!`, 'success');
 }
 
 // ==========================================
