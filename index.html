@@ -57,13 +57,13 @@
 
     <div class="flex flex-wrap items-center gap-1.5 sm:gap-2.5 text-xs">
       <span class="hidden md:inline-block text-white/95 font-medium">
-        Xin chào: <strong id="top-bar-email" class="font-bold underline decoration-white/40">nhilt@vaschools.edu.vn</strong>
+        Xin chào: <strong id="top-bar-email" class="font-bold underline decoration-white/40">---</strong>
       </span>
       <span id="top-bar-role-badge" class="bg-white/15 border border-white/30 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1">
         <i data-lucide="shield" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
         <span id="top-bar-role-text" class="text-[11px] sm:text-xs">Nhân viên</span>
       </span>
-      <button id="top-bar-sync-btn" onclick="syncLoadFromCloud(false)" class="bg-white/15 hover:bg-white/25 border border-white/30 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="Bấm để đồng bộ dữ liệu mới nhất từ Cloud ngay lập tức">
+      <button id="top-bar-sync-btn" onclick="syncLoadFromCloud(false)" class="hidden bg-white/15 hover:bg-white/25 border border-white/30 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="Bấm để đồng bộ dữ liệu mới nhất từ Cloud ngay lập tức">
         <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-300 shrink-0"></i>
         <span id="top-bar-sync-text" class="text-[11px] sm:text-xs">Đồng bộ Cloud</span>
       </button>
@@ -114,7 +114,7 @@
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Nhập Email công việc đã được cấp quyền *</label>
             <div class="relative">
               <i data-lucide="mail" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
-              <input type="email" id="auth-email" required placeholder="VD: nhilt@vaschools.edu.vn" oninput="hideWhitelistError()"
+              <input type="email" id="auth-email" required placeholder="Nhập địa chỉ email của bạn..." oninput="hideWhitelistError()"
                 class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:bg-white transition" />
             </div>
             <p class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
@@ -149,7 +149,7 @@
               </span>
               <button type="button" onclick="backToEmailStep()" class="text-[11px] text-blue-600 hover:underline font-semibold">Đổi Email</button>
             </div>
-            <p id="otp-target-email-display" class="font-mono font-bold text-brand-700 text-sm">nhilt@vaschools.edu.vn</p>
+            <p id="otp-target-email-display" class="font-mono font-bold text-brand-700 text-sm">---</p>
 
             <!-- Real Email Sent Banner (Shown when Gmail Apps Script is configured) -->
             <div id="otp-real-email-sent-box" class="hidden mt-2 pt-2 border-t border-blue-200/80 text-[11px] text-emerald-800 bg-emerald-50/90 p-2 rounded-lg border border-emerald-200">
@@ -190,7 +190,7 @@
     <div id="mobile-sidebar-backdrop" onclick="closeMobileSidebar()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[60] hidden lg:hidden"></div>
     
     <!-- SIDEBAR NAVIGATION (Clean White + Crimson Theme matching screenshot, Slide-Over Drawer on Mobile) -->
-    <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-[70] lg:z-10 w-72 max-w-[85vw] bg-white border-r border-slate-200 text-slate-700 flex flex-col justify-between shrink-0 transform -translate-x-full lg:translate-x-0 lg:transform-none lg:static lg:w-64 lg:min-h-screen shadow-2xl lg:shadow-sm transition-transform duration-200 ease-in-out overflow-y-auto">
+    <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-[70] lg:z-10 w-72 max-w-[85vw] bg-white border-r border-slate-200 text-slate-700 flex flex-col justify-start shrink-0 transform -translate-x-full lg:translate-x-0 lg:transform-none lg:sticky lg:top-[52px] lg:h-[calc(100vh-52px)] lg:w-64 shadow-2xl lg:shadow-sm transition-transform duration-200 ease-in-out overflow-y-auto">
       <div>
         <!-- Mobile Drawer Header -->
         <div class="flex lg:hidden items-center justify-between px-4 pt-3 pb-1 border-b border-slate-100">
@@ -207,8 +207,8 @@
               NV
             </div>
             <div class="min-w-0 flex-1">
-              <p id="user-display-name" class="text-sm font-bold text-slate-900 truncate">Nguyễn Văn A</p>
-              <p id="user-display-email" class="text-xs text-slate-500 truncate">nhilt@vaschools.edu.vn</p>
+              <p id="user-display-name" class="text-sm font-bold text-slate-900 truncate">Chuyên viên</p>
+              <p id="user-display-email" class="text-xs text-slate-500 truncate">---</p>
             </div>
           </div>
           <div class="mt-3 pt-2.5 border-t border-brand-100 flex items-center justify-between">
@@ -279,10 +279,10 @@
             </button>
           </div>
 
-          <!-- Personal Google Drive & Email Quick Tools (Uses User's own Email) -->
-          <div class="pt-3 mt-3 border-t border-slate-200">
-            <span class="px-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">Không gian Cá nhân (Theo Email)</span>
-            <div class="grid grid-cols-2 gap-1.5 px-2">
+          <!-- Personal Google Drive, Email & Immediate Logout (Right Under Drive/Email) -->
+          <div class="pt-3 mt-3 border-t border-slate-200 space-y-2">
+            <span class="px-3.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Không gian Cá nhân & Tài khoản</span>
+            <div class="grid grid-cols-2 gap-1.5 px-1">
               <button onclick="openPersonalGoogleApp('drive')" class="flex items-center space-x-1.5 px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-700 text-xs text-slate-700 font-medium transition" title="Mở Google Drive theo đúng Email đang đăng nhập">
                 <i data-lucide="hard-drive" class="w-3.5 h-3.5 text-emerald-600 shrink-0"></i>
                 <span class="truncate">Drive của tôi</span>
@@ -292,25 +292,23 @@
                 <span class="truncate">Email của tôi</span>
               </button>
             </div>
+            <div class="px-1 pt-0.5 space-y-1.5">
+              <button onclick="logoutUser()" class="w-full flex items-center justify-center space-x-2 px-3 py-2.5 rounded-xl bg-rose-50 hover:bg-brand-600 hover:text-white border border-rose-200 text-brand-700 text-xs font-bold transition shadow-xs">
+                <i data-lucide="log-out" class="w-4 h-4 shrink-0"></i>
+                <span>Đổi tài khoản / Đăng xuất</span>
+              </button>
+              <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80">
+                <div class="flex items-center space-x-1.5 min-w-0">
+                  <span id="sidebar-sync-dot" class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                  <span id="sidebar-sync-text" class="text-slate-500 font-medium text-[10px] truncate">Đã lưu tự động</span>
+                </div>
+                <button type="button" id="sidebar-backup-json-btn" onclick="exportJSONBackup()" class="hidden text-[10px] font-bold text-blue-600 hover:underline shrink-0 ml-1" title="Tải file sao lưu dự phòng (.json)">
+                  Sao lưu .JSON
+                </button>
+              </div>
+            </div>
           </div>
         </nav>
-      </div>
-
-      <!-- Bottom Actions (Cloud, Backup & Logout) -->
-      <div class="p-4 border-t border-slate-200 space-y-2 text-xs">
-        <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-100">
-          <div class="flex items-center space-x-2">
-            <span id="sidebar-sync-dot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span id="sidebar-sync-text" class="text-slate-600 font-medium text-[11px]">Đã lưu tự động</span>
-          </div>
-          <button type="button" onclick="exportJSONBackup()" class="text-[11px] font-bold text-blue-600 hover:underline" title="Tải file sao lưu dự phòng toàn hệ thống (.json)">
-            Sao lưu .JSON
-          </button>
-        </div>
-        <button onclick="logoutUser()" class="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-700 text-slate-600 font-semibold transition">
-          <i data-lucide="log-out" class="w-4 h-4"></i>
-          <span>Đổi tài khoản / Đăng xuất</span>
-        </button>
       </div>
     </aside>
 
@@ -1802,7 +1800,7 @@ function loadFromProperties() {
           <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
             <div class="sm:col-span-5">
               <label class="block text-[11px] font-semibold text-slate-600 mb-1">Địa chỉ Email *</label>
-              <input type="email" id="wl-email-input" required placeholder="VD: sep@vaschools.edu.vn" 
+              <input type="email" id="wl-email-input" required placeholder="Nhập email nhân sự..." 
                 class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-600" />
             </div>
             <div class="sm:col-span-4">

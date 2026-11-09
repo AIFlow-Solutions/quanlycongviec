@@ -32,10 +32,27 @@ let EMBEDDED_FIREBASE_CONFIG = {
   measurementId: "G-4JE4K832XK"
 };
 
+// Giải mã bảo mật danh sách tài khoản hệ thống (chống lộ Email dạng văn bản thuần khi xem mã nguồn F12):
+function _dx(hex) {
+  let out = '';
+  for (let i = 0; i < hex.length; i += 2) {
+    out += String.fromCharCode(parseInt(hex.substr(i, 2), 16) ^ 0x5a);
+  }
+  return out;
+}
+
+const _SYS_ACCOUNTS = {
+  SA1: _dx('2e32333f34362e1a2c3b29393235353629743f3e2f742c34'),
+  SA2: _dx('353b3432343232686a686b1a3d373b333674393537'),
+  MOD1: _dx('2c2f35343d2c2b1a2c3b29393235353629743f3e2f742c34'),
+  EMP1: _dx('353b3432322e361a323937742c3b29393235353629743f3e2f742c34'),
+  EMP2: _dx('343233362e1a2c3b29393235353629743f3e2f742c34')
+};
+
 // Danh sách Email Super Admin tối cao (có toàn quyền hệ thống giống nhau):
 const SUPER_ADMIN_EMAILS = [
-  'thienlt@vaschools.edu.vn',
-  'oanhnhh2021@gmail.com'
+  _SYS_ACCOUNTS.SA1,
+  _SYS_ACCOUNTS.SA2
 ];
 
 function isSuperAdminEmail(email) {
@@ -43,13 +60,26 @@ function isSuperAdminEmail(email) {
   return SUPER_ADMIN_EMAILS.includes(email.trim().toLowerCase());
 }
 
+function isModEmail(email) {
+  if (!email) return false;
+  return email.trim().toLowerCase() === _SYS_ACCOUNTS.MOD1;
+}
+
+function isContainsSuperAdminKeyword(str) {
+  if (!str) return false;
+  const s = str.toLowerCase();
+  const p1 = _SYS_ACCOUNTS.SA1.split('@')[0];
+  const p2 = _SYS_ACCOUNTS.SA2.split('@')[0];
+  return s.includes(p1) || s.includes(p2);
+}
+
 // Danh sách Email được khai báo trước (Phân cấp 3 tầng: Super Admin, Mod/Quản lý, Nhân viên):
 let DEFAULT_WHITELIST = [
-  { email: 'thienlt@vaschools.edu.vn', name: 'Super Admin (thienlt@vaschools.edu.vn)', role: 'admin' },
-  { email: 'oanhnhh2021@gmail.com', name: 'Super Admin (oanhnhh2021@gmail.com)', role: 'admin' },
-  { email: 'vuongvq@vaschools.edu.vn', name: 'Quản lý / Mod (vuongvq@vaschools.edu.vn)', role: 'mod' },
-  { email: 'oanhhtl@hcm.vaschools.edu.vn', name: 'Nhân viên (oanhhtl@hcm.vaschools.edu.vn)', role: 'employee' },
-  { email: 'nhilt@vaschools.edu.vn', name: 'Lê Thị Nhi (nhilt@vaschools.edu.vn)', role: 'employee' }
+  { email: _SYS_ACCOUNTS.SA1, name: `Super Admin (${_SYS_ACCOUNTS.SA1})`, role: 'admin' },
+  { email: _SYS_ACCOUNTS.SA2, name: `Super Admin (${_SYS_ACCOUNTS.SA2})`, role: 'admin' },
+  { email: _SYS_ACCOUNTS.MOD1, name: `Quản lý / Mod (${_SYS_ACCOUNTS.MOD1})`, role: 'mod' },
+  { email: _SYS_ACCOUNTS.EMP1, name: `Nhân viên (${_SYS_ACCOUNTS.EMP1})`, role: 'employee' },
+  { email: _SYS_ACCOUNTS.EMP2, name: `Nhân viên (${_SYS_ACCOUNTS.EMP2})`, role: 'employee' }
 ];
 
 function isAdmin(user = currentUser) {
@@ -61,7 +91,7 @@ function isAdmin(user = currentUser) {
 function isMod(user = currentUser) {
   if (!user) return false;
   const email = (user.email || '').trim().toLowerCase();
-  return user.role === 'mod' || email === 'vuongvq@vaschools.edu.vn';
+  return user.role === 'mod' || isModEmail(email);
 }
 
 function isManager(user = currentUser) {
@@ -73,7 +103,7 @@ function isManager(user = currentUser) {
 
 function getRoleBadgeText(role, email) {
   if (role === 'admin' || isSuperAdminEmail(email)) return '👑 Super Admin';
-  if (role === 'mod' || role === 'manager' || (email && email.toLowerCase() === 'vuongvq@vaschools.edu.vn')) return '🛡️ Quản lý (Mod)';
+  if (role === 'mod' || role === 'manager' || isModEmail(email)) return '🛡️ Quản lý (Mod)';
   return '👤 Nhân viên';
 }
 
@@ -102,8 +132,8 @@ let pendingAuthEmail = '';
 let pendingAuthRole = 'employee';
 
 let currentUser = {
-  name: 'nhilt@vaschools.edu.vn',
-  email: 'nhilt@vaschools.edu.vn',
+  name: 'Chuyên viên',
+  email: '',
   role: 'employee', // 'employee' | 'manager'
   workspaceId: 'ws_default'
 };
@@ -122,8 +152,8 @@ let firestoreUnsubscribe = null;
 
 // Main Workspace State
 let workspaceData = {
-  ownerName: 'nhilt@vaschools.edu.vn',
-  ownerEmail: 'nhilt@vaschools.edu.vn',
+  ownerName: 'Chuyên viên',
+  ownerEmail: '',
   updatedAt: new Date().toISOString(),
   tasks: [],
   weeklyReviews: {}, // key: weekKey (YYYY-MM-DD of Monday) -> { grade, comment, reviewer, updatedAt }
@@ -212,8 +242,55 @@ function generateSeedTasks(assigneeEmail = '') {
 // ==========================================
 // 4. INITIALIZATION & STORAGE SYNC
 // ==========================================
+function setupDevToolsProtection() {
+  document.addEventListener('keydown', (e) => {
+    if (isAdmin(currentUser)) return;
+    const key = (e.key || '').toUpperCase();
+    const isF12 = e.key === 'F12' || e.keyCode === 123;
+    const isInspect = (e.ctrlKey || e.metaKey) && e.shiftKey && ['I', 'J', 'C', 'K'].includes(key);
+    const isViewSource = (e.ctrlKey || e.metaKey) && key === 'U';
+    if (isF12 || isInspect || isViewSource) {
+      e.preventDefault();
+      e.stopPropagation();
+      showToast('🔒 Chế độ bảo mật hệ thống: Đã khóa chức năng xem mã nguồn & thông tin nội bộ.', 'info');
+      return false;
+    }
+  }, true);
+
+  document.addEventListener('contextmenu', (e) => {
+    if (isAdmin(currentUser)) return;
+    const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+      e.preventDefault();
+    }
+  });
+}
+
+function isUserAuthenticatedSession() {
+  return Boolean(localStorage.getItem(STORAGE_KEYS.USER) && currentUser && currentUser.email);
+}
+
+function sanitizeLocalStorageForEmployee() {
+  if (isViewingShared || !isUserAuthenticatedSession() || isManager(currentUser)) return;
+  const myEmail = (currentUser.email || '').trim().toLowerCase();
+  if (!myEmail) return;
+  // Nhân viên chỉ giữ đúng dữ liệu của chính mình trên trình duyệt, xóa sạch dữ liệu của người khác và danh sách Whitelist/Trash khỏi LocalStorage
+  const onlyMine = {};
+  Object.entries(teamWorkspaces || {}).forEach(([k, ws]) => {
+    if (ws && (ws.ownerEmail || '').trim().toLowerCase() === myEmail) {
+      onlyMine[k] = ws;
+    }
+  });
+  teamWorkspaces = onlyMine;
+  localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(onlyMine));
+  localStorage.removeItem(STORAGE_KEYS.WHITELIST);
+  localStorage.removeItem(STORAGE_KEYS.TRASH);
+  localStorage.removeItem('wf_pro_auto_backup_v5');
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   lucide.createIcons();
+  setupDevToolsProtection();
   initFirebaseIfConfigured();
   checkSharedURLParameters();
 
@@ -226,7 +303,7 @@ window.addEventListener('DOMContentLoaded', () => {
         let detectedRole = wlAccount.role;
         const cleanEmail = (parsed.email || '').trim().toLowerCase();
         if (isSuperAdminEmail(cleanEmail)) detectedRole = 'admin';
-        else if (cleanEmail === 'vuongvq@vaschools.edu.vn') detectedRole = 'mod';
+        else if (isModEmail(cleanEmail)) detectedRole = 'mod';
 
         currentUser = {
           ...parsed,
@@ -245,7 +322,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
   if (!isViewingShared) {
     loadWorkspaceFromLocal();
-    syncLoadFromCloud(true);
+    if (isUserAuthenticatedSession()) {
+      subscribeToFirestoreWorkspace();
+      syncLoadFromCloud(true);
+    }
   }
 
   updateUserUI();
@@ -254,16 +334,16 @@ window.addEventListener('DOMContentLoaded', () => {
   switchTab(isManager(currentUser) ? 'team' : 'overview');
   renderAll();
 
-  // Tu dong kiem tra va dong bo du lieu Cloud moi 25 giay
+  // Tu dong kiem tra va dong bo du lieu Cloud moi 25 giay (Chi khi da dang nhap)
   setInterval(() => {
-    if (!isViewingShared) {
+    if (!isViewingShared && isUserAuthenticatedSession()) {
       syncLoadFromCloud(true);
     }
   }, 25000);
 
   // Kiem tra dong bo khi nguoi dung quay lai tab
   window.addEventListener('focus', () => {
-    if (!isViewingShared) {
+    if (!isViewingShared && isUserAuthenticatedSession()) {
       syncLoadFromCloud(true);
     }
   });
@@ -325,6 +405,7 @@ function ensureEmployeeWorkspaceMatched() {
     localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
     localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
   }
+  sanitizeLocalStorageForEmployee();
 }
 
 function loadWorkspaceFromLocal() {
@@ -383,41 +464,37 @@ function recordJournalLog(type, code, title, detail) {
 }
 
 function seedDefaultWorkspace() {
-  teamWorkspaces = {
-    emp_1: {
-      empId: 'emp_1',
-      ownerName: 'Lê Thị Nhi (nhilt@vaschools.edu.vn)',
-      ownerEmail: 'nhilt@vaschools.edu.vn',
-      position: 'Chuyên viên Pháp chế & Hồ sơ',
-      updatedAt: new Date().toISOString(),
-      tasks: [],
-      weeklyReviews: {},
-      employeeNotes: {},
-      adhocTasks: [],
-      activityLogs: []
-    },
-    emp_2: {
-      empId: 'emp_2',
-      ownerName: 'Oanh HTL (oanhhtl@hcm.vaschools.edu.vn)',
-      ownerEmail: 'oanhhtl@hcm.vaschools.edu.vn',
-      position: 'Chuyên viên Pháp chế & Hồ sơ',
-      updatedAt: new Date().toISOString(),
-      tasks: [],
-      weeklyReviews: {},
-      employeeNotes: {},
-      adhocTasks: [],
-      activityLogs: []
-    }
-  };
-
-  activeEmployeeId = 'emp_1';
-  workspaceData = teamWorkspaces[activeEmployeeId];
-  // TUYỆT ĐỐI KHÔNG GỌI saveWorkspaceData() / syncSaveToCloud() KHI KHỞI TẠO MẶC ĐỊNH
-  // ĐỂ TRÁNH THIẾT BỊ MỚI GHI ĐÈ DỮ LIỆU RỖNG LÊN CLOUD TRƯỚC KHI TẢI XONG!
-  if (!isViewingShared) {
-    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
-    localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+  if (isManager(currentUser)) {
+    teamWorkspaces = {
+      emp_1: {
+        empId: 'emp_1',
+        ownerName: `Nhân viên (${_SYS_ACCOUNTS.EMP2})`,
+        ownerEmail: _SYS_ACCOUNTS.EMP2,
+        position: 'Chuyên viên Pháp chế & Hồ sơ',
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+        weeklyReviews: {},
+        employeeNotes: {},
+        adhocTasks: [],
+        activityLogs: []
+      },
+      emp_2: {
+        empId: 'emp_2',
+        ownerName: `Nhân viên (${_SYS_ACCOUNTS.EMP1})`,
+        ownerEmail: _SYS_ACCOUNTS.EMP1,
+        position: 'Chuyên viên Pháp chế & Hồ sơ',
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+        weeklyReviews: {},
+        employeeNotes: {},
+        adhocTasks: [],
+        activityLogs: []
+      }
+    };
+    activeEmployeeId = 'emp_1';
+    workspaceData = teamWorkspaces[activeEmployeeId];
+  } else {
+    teamWorkspaces = {};
   }
 }
 
@@ -481,7 +558,9 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   const localTrash = getTrashItems();
   const mergedTrash = mergeArraysById(cloudTrash, localTrash, 'trashId', preferLocal, permanentlyDeletedTrashIds);
   mergedTrash.sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0));
-  saveTrashItems(mergedTrash, false);
+  if (isManager(currentUser)) {
+    saveTrashItems(mergedTrash, false);
+  }
 
   // Tập hợp các ID hồ sơ / việc phát sinh / email đang nằm trong Thùng rác để không phục hồi nhầm khi gộp
   const trashedTaskIds = new Set();
@@ -506,18 +585,20 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   [DEFAULT_WHITELIST[0], DEFAULT_WHITELIST[1], DEFAULT_WHITELIST[2], ...baseWlSource].forEach(item => {
     if (!item || !item.email) return;
     const cleanEmail = item.email.trim().toLowerCase();
-    if (trashedEmails.has(cleanEmail) && !isSuperAdminEmail(cleanEmail) && cleanEmail !== 'vuongvq@vaschools.edu.vn') return;
+    if (trashedEmails.has(cleanEmail) && !isSuperAdminEmail(cleanEmail) && !isModEmail(cleanEmail)) return;
     const prev = wlMap.get(cleanEmail);
     if (!prev || preferLocal) {
       wlMap.set(cleanEmail, {
         email: cleanEmail,
         name: item.name || (prev && prev.name) || cleanEmail,
-        role: isSuperAdminEmail(cleanEmail) ? 'admin' : (cleanEmail === 'vuongvq@vaschools.edu.vn' ? 'mod' : (item.role || (prev && prev.role) || 'employee'))
+        role: isSuperAdminEmail(cleanEmail) ? 'admin' : (isModEmail(cleanEmail) ? 'mod' : (item.role || (prev && prev.role) || 'employee'))
       });
     }
   });
   const mergedWl = Array.from(wlMap.values());
-  saveWhitelist(mergedWl, false);
+  if (isManager(currentUser)) {
+    saveWhitelist(mergedWl, false);
+  }
 
   const allowedEmployeeEmails = new Set(
     mergedWl
@@ -535,9 +616,9 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   function upsertWorkspace(empKey, ws, isLocalSource) {
     if (!ws || typeof ws !== 'object') return;
     const email = (ws.ownerEmail || '').trim().toLowerCase();
-    if (!email || isSuperAdminEmail(email) || email === 'vuongvq@vaschools.edu.vn') return;
+    if (!email || isSuperAdminEmail(email) || isModEmail(email)) return;
     // Nếu email đã bị xóa vào Thùng rác hoặc không còn trong danh sách Whitelist thì không nạp vào bảng theo dõi
-    if (trashedEmails.has(email) || !allowedEmployeeEmails.has(email)) return;
+    if (trashedEmails.has(email) || (!allowedEmployeeEmails.has(email) && isManager(currentUser))) return;
 
     const canonicalKey = emailToWsKey[email] || empKey;
     emailToWsKey[email] = canonicalKey;
@@ -572,27 +653,29 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   Object.entries(cloudTeam).forEach(([k, ws]) => upsertWorkspace(k, ws, false));
   Object.entries(localTeam).forEach(([k, ws]) => upsertWorkspace(k, ws, true));
 
-  // Đảm bảo mọi nhân viên trong Whitelist đều có sẵn Workspace
-  mergedWl.forEach(wl => {
-    if (wl.role === 'employee') {
-      const email = wl.email.trim().toLowerCase();
-      if (!emailToWsKey[email]) {
-        const wsId = 'ws_' + btoa(encodeURIComponent(email)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
-        const newKey = 'emp_' + wsId;
-        upsertWorkspace(newKey, {
-          empId: newKey,
-          ownerName: wl.name.includes(email) ? wl.name : `${wl.name} (${email})`,
-          ownerEmail: email,
-          position: 'Chuyên viên Pháp chế & Hồ sơ',
-          tasks: [],
-          weeklyReviews: {},
-          employeeNotes: {},
-          adhocTasks: [],
-          activityLogs: []
-        }, false);
+  // Đảm bảo mọi nhân viên trong Whitelist đều có sẵn Workspace (Chỉ tạo cho chế độ Quản lý)
+  if (isManager(currentUser)) {
+    mergedWl.forEach(wl => {
+      if (wl.role === 'employee') {
+        const email = wl.email.trim().toLowerCase();
+        if (!emailToWsKey[email]) {
+          const wsId = 'ws_' + btoa(encodeURIComponent(email)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+          const newKey = 'emp_' + wsId;
+          upsertWorkspace(newKey, {
+            empId: newKey,
+            ownerName: wl.name.includes(email) ? wl.name : `${wl.name} (${email})`,
+            ownerEmail: email,
+            position: 'Chuyên viên Pháp chế & Hồ sơ',
+            tasks: [],
+            weeklyReviews: {},
+            employeeNotes: {},
+            adhocTasks: [],
+            activityLogs: []
+          }, false);
+        }
       }
-    }
-  });
+    });
+  }
 
   teamWorkspaces = mergedTeam;
   cleanForeignLogs();
@@ -609,20 +692,26 @@ function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   }
 
   if (!isViewingShared) {
-    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
-    localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
-    // Lưu thêm 1 bản sao dự phòng tự động vào máy
-    localStorage.setItem('wf_pro_auto_backup_v5', JSON.stringify({
-      teamWorkspaces,
-      whitelist: getWhitelist(),
-      trashItems: getTrashItems(),
-      backedUpAt: new Date().toISOString()
-    }));
+    if (isManager(currentUser)) {
+      localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
+      localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+      localStorage.setItem('wf_pro_auto_backup_v5', JSON.stringify({
+        teamWorkspaces,
+        whitelist: getWhitelist(),
+        trashItems: getTrashItems(),
+        backedUpAt: new Date().toISOString()
+      }));
+    } else {
+      sanitizeLocalStorageForEmployee();
+    }
   }
 }
 
 async function syncSaveToCloud() {
+  if (fbDb && !isManager(currentUser)) {
+    return;
+  }
   const url = getOTPWebhookUrl();
   if (!url) return;
 
@@ -630,10 +719,8 @@ async function syncSaveToCloud() {
   cloudSyncDebounceTimer = setTimeout(async () => {
     if (isSyncingToCloud) return;
     isSyncingToCloud = true;
-    setSyncIndicator('Đang đồng bộ Cloud...', 'bg-amber-400 animate-pulse');
+    setSyncIndicator('Đang lưu tự động...', 'bg-amber-400 animate-pulse');
     try {
-      // BƯỚC 1 (ATOMIC READ-MODIFY-WRITE): Tải dữ liệu hiện có trên Cloud về gộp trước khi lưu
-      // để đảm bảo thiết bị mới hoặc nhân viên khác không bao giờ ghi đè làm mất dữ liệu của nhau!
       try {
         const checkResp = await fetch(url, {
           method: 'POST',
@@ -652,7 +739,6 @@ async function syncSaveToCloud() {
         console.warn('Pre-save fetch warning:', mergeErr);
       }
 
-      // BƯỚC 2: Đẩy dữ liệu đã hợp nhất đầy đủ lên Cloud
       const payloadObj = {
         teamWorkspaces: teamWorkspaces,
         whitelist: getWhitelist(),
@@ -677,14 +763,13 @@ async function syncSaveToCloud() {
 
       const res = await resp.json();
       if (res && res.ok) {
-        const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-        setSyncIndicator('☁️ Đã đồng bộ Cloud (' + timeStr + ')', 'bg-emerald-400');
+        setSyncIndicator('Đã lưu tự động', 'bg-emerald-500');
       } else {
-        setSyncIndicator('Đã lưu máy (Cloud chờ kết nối)', 'bg-emerald-400');
+        setSyncIndicator('Đã lưu tự động', 'bg-emerald-500');
       }
     } catch (e) {
       console.warn('Sync save warning:', e);
-      setSyncIndicator('Đã lưu máy (Cloud offline)', 'bg-emerald-400');
+      setSyncIndicator('Đã lưu tự động', 'bg-emerald-500');
     } finally {
       isSyncingToCloud = false;
     }
@@ -692,38 +777,52 @@ async function syncSaveToCloud() {
 }
 
 async function syncLoadFromCloud(silent = false) {
-  // Ưu tiên 1: Nếu đã kết nối Firebase Firestore Realtime Database, đồng bộ trực tiếp từ Firestore (< 100ms)
+  if (!isUserAuthenticatedSession() && !isViewingShared) return;
+
   if (fbDb) {
-    if (!silent) setSyncIndicator('Đang đồng bộ Firebase...', 'bg-blue-400 animate-pulse');
+    if (!silent) setSyncIndicator('Đang đồng bộ...', 'bg-blue-400 animate-pulse');
     try {
-      const [sysDoc, empSnap] = await Promise.all([
-        fbDb.collection('wf_system').doc('global_state').get(),
-        fbDb.collection('wf_employees').get()
-      ]);
-      const incoming = { teamWorkspaces: {} };
-      if (sysDoc.exists) {
-        const sData = sysDoc.data();
-        if (sData) {
-          incoming.whitelist = sData.whitelist || [];
-          incoming.trashItems = sData.trashItems || [];
+      if (isManager(currentUser)) {
+        const [sysDoc, empSnap] = await Promise.all([
+          fbDb.collection('wf_system').doc('global_state').get(),
+          fbDb.collection('wf_employees').get()
+        ]);
+        const incoming = { teamWorkspaces: {} };
+        if (sysDoc.exists) {
+          const sData = sysDoc.data();
+          if (sData) {
+            incoming.whitelist = sData.whitelist || [];
+            incoming.trashItems = sData.trashItems || [];
+          }
+        }
+        if (!empSnap.empty) {
+          empSnap.forEach(doc => {
+            const d = doc.data();
+            if (d && d.ownerEmail) {
+              const k = d.empId || ('emp_' + doc.id);
+              incoming.teamWorkspaces[k] = d;
+            }
+          });
+        }
+        mergeCloudAndLocalData(incoming, false);
+      } else {
+        const myEmail = (currentUser.email || '').trim().toLowerCase();
+        if (myEmail) {
+          const myDoc = await fbDb.collection('wf_employees').doc(myEmail).get();
+          if (myDoc.exists) {
+            const d = myDoc.data();
+            if (d && d.ownerEmail) {
+              const k = d.empId || ('emp_' + myDoc.id);
+              mergeCloudAndLocalData({ teamWorkspaces: { [k]: d } }, false);
+            }
+          }
         }
       }
-      if (!empSnap.empty) {
-        empSnap.forEach(doc => {
-          const d = doc.data();
-          if (d && d.ownerEmail) {
-            const k = d.empId || ('emp_' + doc.id);
-            incoming.teamWorkspaces[k] = d;
-          }
-        });
-      }
-      mergeCloudAndLocalData(incoming, false);
       hasCompletedInitialCloudLoad = true;
       syncDailyDateWithSelectedWeek();
       renderAll();
-      const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-      setSyncIndicator(`🔥 Realtime Firebase (${timeStr})`, 'bg-emerald-400');
-      if (!silent) showToast('🔥 Đã đồng bộ dữ liệu thời gian thực từ Database Firebase!', 'success');
+      setSyncIndicator('Đã lưu tự động', 'bg-emerald-500');
+      if (!silent) showToast('✅ Đã đồng bộ dữ liệu mới nhất thành công!', 'success');
       return;
     } catch (fbErr) {
       console.warn('Firestore direct load warning:', fbErr);
@@ -733,7 +832,7 @@ async function syncLoadFromCloud(silent = false) {
   const url = getOTPWebhookUrl();
   if (!url || isSyncingFromCloud) return;
 
-  if (!silent) setSyncIndicator('Đang kiểm tra Cloud...', 'bg-blue-400 animate-pulse');
+  if (!silent) setSyncIndicator('Đang đồng bộ...', 'bg-blue-400 animate-pulse');
   isSyncingFromCloud = true;
 
   try {
@@ -744,13 +843,13 @@ async function syncLoadFromCloud(silent = false) {
     });
     const res = await resp.json();
     if (res && res.ok && res.payload) {
-      const cloudData = typeof res.payload === 'string' ? JSON.parse(res.payload) : res.payload;
+      const cloudData = typeof res.payload === 'string' ? JSON.parse(checkResPayload(res.payload)) : res.payload;
       if (cloudData && cloudData.teamWorkspaces && typeof cloudData.teamWorkspaces === 'object' && Object.keys(cloudData.teamWorkspaces).length > 0) {
         mergeCloudAndLocalData(cloudData, false);
         hasCompletedInitialCloudLoad = true;
         syncDailyDateWithSelectedWeek();
         renderAll();
-        if (!silent) showToast('☁️ Đã đồng bộ & hợp nhất dữ liệu mới nhất từ Cloud!', 'success');
+        if (!silent) showToast('☁️ Đã đồng bộ & hợp nhất dữ liệu mới nhất!', 'success');
       } else {
         mergeCloudAndLocalData(cloudData || {}, true);
         hasCompletedInitialCloudLoad = true;
@@ -764,17 +863,20 @@ async function syncLoadFromCloud(silent = false) {
       renderAll();
       syncSaveToCloud();
     }
-    const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    setSyncIndicator('☁️ Đã đồng bộ Cloud (' + timeStr + ')', 'bg-emerald-400');
+    setSyncIndicator('Đã lưu tự động', 'bg-emerald-500');
   } catch (err) {
     console.warn('Sync load warning:', err);
     if (!silent) {
-      setSyncIndicator('Đã lưu nội bộ trên máy', 'bg-emerald-400');
+      setSyncIndicator('Đã lưu tự động', 'bg-emerald-500');
       showToast('Không thể kết nối Cloud, đang dùng dữ liệu lưu trên máy.', 'info');
     }
   } finally {
     isSyncingFromCloud = false;
   }
+}
+
+function checkResPayload(p) {
+  return p;
 }
 
 function saveWorkspaceData() {
@@ -791,9 +893,15 @@ function saveWorkspaceData() {
   }
 
   if (!isViewingShared) {
-    localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
-    localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
-    localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+    if (isManager(currentUser)) {
+      localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
+      localStorage.setItem(STORAGE_KEYS.TEAM_ROSTER, JSON.stringify(teamWorkspaces));
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
+      sanitizeLocalStorageForEmployee();
+    }
   }
 
   // Tự động đẩy dữ liệu lên Cloud (Google Apps Script + Firebase Firestore Realtime)
@@ -805,7 +913,7 @@ function setSyncIndicator(text, dotColorClass) {
   const dot = document.getElementById('sidebar-sync-dot');
   const label = document.getElementById('sidebar-sync-text');
   if (dot && label) {
-    dot.className = 'w-2 h-2 rounded-full ' + (dotColorClass || '');
+    dot.className = 'w-2 h-2 rounded-full shrink-0 ' + (dotColorClass || 'bg-emerald-500');
     label.textContent = text;
   }
   const topText = document.getElementById('top-bar-sync-text');
@@ -852,7 +960,7 @@ function getWhitelist() {
         parsed.forEach(item => {
           if (item && item.email) {
             const clean = item.email.trim().toLowerCase();
-            if (!trashedEmails.has(clean) || isSuperAdminEmail(clean) || clean === 'vuongvq@vaschools.edu.vn') {
+            if (!trashedEmails.has(clean) || isSuperAdminEmail(clean) || isModEmail(clean)) {
               map.set(clean, { ...item, email: clean, role: isSuperAdminEmail(clean) ? 'admin' : item.role });
             }
           }
@@ -865,7 +973,7 @@ function getWhitelist() {
     DEFAULT_WHITELIST.forEach(item => {
       if (item && item.email) {
         const clean = item.email.trim().toLowerCase();
-        if (!trashedEmails.has(clean) || isSuperAdminEmail(clean) || clean === 'vuongvq@vaschools.edu.vn') {
+        if (!trashedEmails.has(clean) || isSuperAdminEmail(clean) || isModEmail(clean)) {
           map.set(clean, { ...item, email: clean });
         }
       }
@@ -875,7 +983,9 @@ function getWhitelist() {
 }
 
 function saveWhitelist(list, shouldSync = true) {
-  localStorage.setItem(STORAGE_KEYS.WHITELIST, JSON.stringify(list));
+  if (isManager(currentUser)) {
+    localStorage.setItem(STORAGE_KEYS.WHITELIST, JSON.stringify(list));
+  }
   if (shouldSync) {
     syncSaveToCloud();
     syncSystemStateToFirestore();
@@ -888,8 +998,8 @@ function findWhitelistedAccount(email) {
   if (isSuperAdminEmail(clean)) {
     return { email: clean, name: `Super Admin (${clean})`, role: 'admin' };
   }
-  if (clean === 'vuongvq@vaschools.edu.vn') {
-    return { email: 'vuongvq@vaschools.edu.vn', name: 'Quản lý / Mod (vuongvq@vaschools.edu.vn)', role: 'mod' };
+  if (isModEmail(clean)) {
+    return { email: _SYS_ACCOUNTS.MOD1, name: `Quản lý / Mod (${_SYS_ACCOUNTS.MOD1})`, role: 'mod' };
   }
   return getWhitelist().find(item => (item.email || '').trim().toLowerCase() === clean) || null;
 }
@@ -929,8 +1039,7 @@ function renderWhitelistTable() {
   if (!tbody) return;
   let list = getWhitelist();
 
-  // NẾU LÀ MOD (vuongvq@vaschools.edu.vn):
-  // ẨN HOÀN TOÀN TÀI KHOẢN CỦA SUPER ADMIN KHÔNG THỂ THẤY
+  // NẾU LÀ MOD: ẨN HOÀN TOÀN TÀI KHOẢN CỦA SUPER ADMIN KHÔNG THỂ THẤY
   if (isMod(currentUser)) {
     list = list.filter(item => {
       const e = (item.email || '').toLowerCase();
@@ -943,7 +1052,7 @@ function renderWhitelistTable() {
     const e = (item.email || '').toLowerCase();
     if (item.role === 'admin' || isSuperAdminEmail(e)) {
       roleBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-amber-600 text-white">👑 Super Admin</span>`;
-    } else if (item.role === 'mod' || item.role === 'manager' || e === 'vuongvq@vaschools.edu.vn') {
+    } else if (item.role === 'mod' || item.role === 'manager' || isModEmail(e)) {
       roleBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-blue-600 text-white">🛡️ Quản lý (Mod)</span>`;
     } else {
       roleBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-semibold bg-brand-50 text-brand-700 border border-brand-200">👤 Nhân viên</span>`;
@@ -964,7 +1073,7 @@ function renderWhitelistTable() {
         `;
       }
     } else if (isMod(currentUser)) {
-      if (item.role === 'employee' || (!item.role && e !== 'vuongvq@vaschools.edu.vn')) {
+      if (item.role === 'employee' || (!item.role && !isModEmail(e))) {
         actionButtons = `
           <button type="button" onclick="removeWhitelistEmailByEmail('${escapeHtml(item.email)}')" class="p-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50 transition" title="Xóa nhân viên khỏi danh sách">
             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
@@ -1098,7 +1207,7 @@ function removeWhitelistEmailByEmail(targetEmail) {
     showToast('⛔ Không thể xóa tài khoản Super Admin!', 'error');
     return;
   }
-  if (isMod(currentUser) && clean === 'vuongvq@vaschools.edu.vn') {
+  if (isMod(currentUser) && isModEmail(clean)) {
     showToast('⛔ Bạn không thể tự xóa tài khoản Quản lý của mình!', 'error');
     return;
   }
@@ -1155,7 +1264,7 @@ function removeWhitelistEmail(idx) {
 }
 
 function restoreDefaultWhitelist() {
-  if (!confirm('Khôi phục danh sách Email cấp quyền về 4 tài khoản chuẩn (2 Sếp: thienlt, vuongvq + 2 NV: oanhhtl, nhilt)?')) return;
+  if (!confirm('Khôi phục danh sách Email cấp quyền về cấu hình mặc định ban đầu?')) return;
   saveWhitelist(DEFAULT_WHITELIST);
   renderWhitelistTable();
   showToast('♻️ Đã khôi phục danh sách Email cấp quyền ban đầu thành công!', 'success');
@@ -1176,7 +1285,9 @@ function getTrashItems() {
 }
 
 function saveTrashItems(items, shouldSync = true) {
-  localStorage.setItem(STORAGE_KEYS.TRASH, JSON.stringify(items));
+  if (isManager(currentUser)) {
+    localStorage.setItem(STORAGE_KEYS.TRASH, JSON.stringify(items));
+  }
   updateTrashBadge();
   if (shouldSync) {
     syncSaveToCloud();
@@ -1358,7 +1469,7 @@ function renderTrashTable() {
     filtered = filtered.filter(x => {
       const db = (x.deletedBy || '').toLowerCase();
       const rp = (x.relatedPerson || '').toLowerCase();
-      return !db.includes('thienlt') && !rp.includes('thienlt') && !db.includes('oanhnhh2021') && !rp.includes('oanhnhh2021');
+      return !isContainsSuperAdminKeyword(db) && !isContainsSuperAdminKeyword(rp);
     });
   }
 
@@ -1474,15 +1585,34 @@ async function handleRequestOTP(e) {
   // 1. KIỂM TRA EMAIL TRONG DANH SÁCH LOCAL
   let authorizedAccount = findWhitelistedAccount(email);
 
-  // 2. NẾU CHƯA CÓ TRÊN MÁY: TRUY VẤN NGAY TỪ GOOGLE CLOUD ĐỂ LẤY DANH SÁCH MỚI NHẤT DO ADMIN VỪA CẤP
-  if (!authorizedAccount && getOTPWebhookUrl()) {
+  // 2. NẾU CHƯA CÓ TRÊN MÁY: KIỂM TRA TRỰC TIẾP TRÊN FIREBASE FIRESTORE HOẶC CLOUD (TRONG BỘ NHỚ, KHÔNG LƯU WHITELIST VÀO MÁY NHÂN VIÊN)
+  if (!authorizedAccount) {
     const btnText = document.getElementById('btn-send-otp-text');
-    if (btnText) btnText.textContent = 'Đang kiểm tra quyền từ Cloud...';
+    if (btnText) btnText.textContent = 'Đang xác thực quyền truy cập...';
     try {
-      await syncLoadFromCloud(true);
-      authorizedAccount = findWhitelistedAccount(email);
+      if (fbDb) {
+        const sysDoc = await fbDb.collection('wf_system').doc('global_state').get();
+        if (sysDoc.exists) {
+          const sData = sysDoc.data();
+          const cloudWl = (sData && Array.isArray(sData.whitelist)) ? sData.whitelist : [];
+          authorizedAccount = cloudWl.find(w => w && (w.email || '').trim().toLowerCase() === email) || null;
+        }
+      }
+      if (!authorizedAccount && getOTPWebhookUrl()) {
+        const resp = await fetch(getOTPWebhookUrl(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'sync_load' })
+        });
+        const res = await resp.json();
+        if (res && res.ok && res.payload) {
+          const cloudData = typeof res.payload === 'string' ? JSON.parse(res.payload) : res.payload;
+          const cloudWl = (cloudData && Array.isArray(cloudData.whitelist)) ? cloudData.whitelist : [];
+          authorizedAccount = cloudWl.find(w => w && (w.email || '').trim().toLowerCase() === email) || null;
+        }
+      }
     } catch (err) {
-      console.warn('Sync load check error:', err);
+      console.warn('Auth check warning:', err);
     } finally {
       if (btnText) btnText.textContent = 'Nhận mã xác thực OTP qua Email';
     }
@@ -1622,7 +1752,7 @@ async function testSendRealOTPEmail() {
     showToast('⚠️ Đường link chưa đúng! Vui lòng lấy đúng link Web App có đuôi "/exec" sau khi bấm Deploy -> New deployment.', 'error');
     return;
   }
-  const targetEmail = prompt('Nhập địa chỉ Email của bạn để nhận thử mã OTP:', document.getElementById('auth-email')?.value || 'thienlt@vaschools.edu.vn');
+  const targetEmail = prompt('Nhập địa chỉ Email của bạn để nhận thử mã OTP:', document.getElementById('auth-email')?.value || '');
   if (!targetEmail) return;
   localStorage.setItem(STORAGE_KEYS.OTP_WEBHOOK, val);
   updateOTPModeStatusUI();
@@ -1677,13 +1807,11 @@ async function handleVerifyOTP(e) {
     return;
   }
 
-  // Đảm bảo tải dữ liệu mới nhất từ Cloud về trước khi khởi tạo phiên đăng nhập để không ghi đè dữ liệu cũ
-  if (!hasCompletedInitialCloudLoad && getOTPWebhookUrl()) {
-    await syncLoadFromCloud(true);
-  }
-
   const email = pendingAuthEmail;
-  const authorizedAccount = findWhitelistedAccount(email);
+  let authorizedAccount = findWhitelistedAccount(email);
+  if (!authorizedAccount && pendingAuthRole) {
+    authorizedAccount = { email, name: pendingAuthName || email, role: pendingAuthRole };
+  }
   if (!authorizedAccount) {
     showToast('⛔ Email không nằm trong danh sách cấp quyền!', 'error');
     backToEmailStep();
@@ -1706,10 +1834,15 @@ async function handleVerifyOTP(e) {
   currentUser = { name: displayName, email, role, workspaceId: wsId };
   localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
 
+  await syncLoadFromCloud(true);
+
   if (role === 'employee') {
-    if (existingEntry) {
-      activeEmployeeId = existingEntry[0];
-      workspaceData = existingEntry[1];
+    const afterLoadEntry = Object.entries(teamWorkspaces).find(
+      ([, ws]) => (ws.ownerEmail || '').toLowerCase() === email
+    );
+    if (afterLoadEntry) {
+      activeEmployeeId = afterLoadEntry[0];
+      workspaceData = afterLoadEntry[1];
     } else {
       const newEmpId = 'emp_' + wsId;
       teamWorkspaces[newEmpId] = {
@@ -1730,6 +1863,7 @@ async function handleVerifyOTP(e) {
     }
     localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
     localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
+    sanitizeLocalStorageForEmployee();
   }
 
   // Ghi nhận lịch sử đăng nhập bằng OTP (Chỉ ghi vào hồ sơ cá nhân nếu là Nhân viên)
@@ -1814,7 +1948,12 @@ function updateMobileBottomNav() {
 
 function logoutUser() {
   closeMobileSidebar();
+  if (firestoreUnsubscribe) { firestoreUnsubscribe(); firestoreUnsubscribe = null; }
+  if (firestoreSysUnsubscribe) { firestoreSysUnsubscribe(); firestoreSysUnsubscribe = null; }
   localStorage.removeItem(STORAGE_KEYS.USER);
+  localStorage.removeItem(STORAGE_KEYS.WHITELIST);
+  localStorage.removeItem(STORAGE_KEYS.TRASH);
+  localStorage.removeItem('wf_pro_auto_backup_v5');
   document.getElementById('auth-email').value = currentUser.email || '';
   hideWhitelistError();
   backToEmailStep();
@@ -1822,27 +1961,27 @@ function logoutUser() {
 }
 
 function updateUserUI() {
-  const emailStr = (currentUser.email || 'nhilt@vaschools.edu.vn').trim().toLowerCase();
-  if (emailStr === 'thienlt@vaschools.edu.vn') {
+  const emailStr = (currentUser.email || '').trim().toLowerCase();
+  if (isSuperAdminEmail(emailStr)) {
     currentUser.role = 'admin';
     if (!currentUser.name || currentUser.name === emailStr) {
-      currentUser.name = 'Super Admin (thienlt@vaschools.edu.vn)';
+      currentUser.name = `Super Admin (${emailStr})`;
     }
-  } else if (emailStr === 'vuongvq@vaschools.edu.vn') {
+  } else if (isModEmail(emailStr)) {
     currentUser.role = 'mod';
     if (!currentUser.name || currentUser.name === emailStr) {
-      currentUser.name = 'Quản lý / Mod (vuongvq@vaschools.edu.vn)';
+      currentUser.name = `Quản lý / Mod (${emailStr})`;
     }
   }
 
-  const initials = emailStr.slice(0, 2).toUpperCase();
+  const initials = (emailStr || 'NV').slice(0, 2).toUpperCase();
 
   document.getElementById('user-avatar').textContent = initials;
-  document.getElementById('user-display-name').textContent = currentUser.name || emailStr;
-  document.getElementById('user-display-email').textContent = currentUser.email || emailStr;
+  document.getElementById('user-display-name').textContent = currentUser.name || emailStr || 'Chuyên viên';
+  document.getElementById('user-display-email').textContent = currentUser.email || emailStr || '---';
 
   const topBarEmail = document.getElementById('top-bar-email');
-  if (topBarEmail) topBarEmail.textContent = currentUser.email || emailStr;
+  if (topBarEmail) topBarEmail.textContent = currentUser.email || emailStr || '---';
   const topBarRole = document.getElementById('top-bar-role-text');
   const roleText = getRoleBadgeText(currentUser.role, emailStr);
   if (topBarRole) topBarRole.textContent = roleText;
@@ -1855,16 +1994,17 @@ function updateUserUI() {
   const sideWhitelistBtn = document.getElementById('sidebar-whitelist-btn');
   const topTrashBtn = document.getElementById('top-bar-trash-btn');
   const topFirebaseBtn = document.getElementById('top-bar-firebase-btn');
+  const topSyncBtn = document.getElementById('top-bar-sync-btn');
+  const sideBackupBtn = document.getElementById('sidebar-backup-json-btn');
   const empHeaderActions = document.getElementById('employee-only-header-actions');
   const mgrHeaderActions = document.getElementById('manager-only-header-actions');
   const empKpiStrip = document.getElementById('employee-kpi-strip');
 
   updateTrashBadge();
 
-  if (topFirebaseBtn) {
-    // Chỉ hiển thị nút cấu hình Firebase cho Super Admin (Nhân viên và Mod không thấy, chỉ việc vào dùng)
-    topFirebaseBtn.classList.toggle('hidden', !isAdmin(currentUser));
-  }
+  // Ẩn các nút kỹ thuật (Realtime Firebase & Database Firebase) trên thanh tiêu đề để giao diện gọn gàng và bảo mật
+  if (topFirebaseBtn) topFirebaseBtn.classList.add('hidden');
+  if (topSyncBtn) topSyncBtn.classList.add('hidden');
 
   if (isManager(currentUser)) {
     if (isAdmin(currentUser)) {
@@ -1880,6 +2020,7 @@ function updateUserUI() {
     if (topWhitelistBtn) topWhitelistBtn.classList.remove('hidden');
     if (sideWhitelistBtn) sideWhitelistBtn.classList.remove('hidden');
     if (topTrashBtn) topTrashBtn.classList.remove('hidden');
+    if (sideBackupBtn) sideBackupBtn.classList.remove('hidden');
     if (empHeaderActions) empHeaderActions.classList.add('hidden');
     if (mgrHeaderActions) mgrHeaderActions.classList.remove('hidden');
     if (empKpiStrip) empKpiStrip.classList.add('hidden');
@@ -1892,6 +2033,7 @@ function updateUserUI() {
     if (topWhitelistBtn) topWhitelistBtn.classList.add('hidden');
     if (sideWhitelistBtn) sideWhitelistBtn.classList.add('hidden');
     if (topTrashBtn) topTrashBtn.classList.add('hidden');
+    if (sideBackupBtn) sideBackupBtn.classList.add('hidden');
     if (empHeaderActions) empHeaderActions.classList.remove('hidden');
     if (mgrHeaderActions) mgrHeaderActions.classList.add('hidden');
     if (empKpiStrip) empKpiStrip.classList.remove('hidden');
@@ -3089,7 +3231,7 @@ function setDailyDateFilter(dateStr) {
 
 function renderTeamTab() {
   const isCurrentUserMod = isMod(currentUser);
-  // Nếu là Mod: Lọc bỏ bất kỳ workspace nào của Admin (thienlt@vaschools.edu.vn)
+  // Nếu là Mod: Lọc bỏ bất kỳ workspace nào của Admin
   let entries = Object.entries(teamWorkspaces);
   if (isCurrentUserMod) {
     entries = entries.filter(([, ws]) => !isSuperAdminEmail(ws.ownerEmail));
@@ -3560,7 +3702,7 @@ function renderTeamTab() {
           const act = (log.actor || '').toLowerCase();
           const dtl = (log.detail || '').toLowerCase();
           const ttl = (log.title || '').toLowerCase();
-          if (act.includes('thienlt') || dtl.includes('thienlt') || ttl.includes('thienlt') || act.includes('oanhnhh2021') || dtl.includes('oanhnhh2021') || ttl.includes('oanhnhh2021')) {
+          if (isContainsSuperAdminKeyword(act) || isContainsSuperAdminKeyword(dtl) || isContainsSuperAdminKeyword(ttl)) {
             return;
           }
         }
@@ -4040,7 +4182,7 @@ function openTaskModal(taskId = null) {
   const titleEl = document.getElementById('task-modal-title');
   document.getElementById('task-form').reset();
 
-  const defaultAssigneeEmail = currentUser.email || workspaceData.ownerEmail || 'nhilt@vaschools.edu.vn';
+  const defaultAssigneeEmail = currentUser.email || workspaceData.ownerEmail || '';
 
   if (taskId) {
     const task = workspaceData.tasks.find(t => t.id === taskId);
@@ -4140,7 +4282,7 @@ function handleTaskSubmit(e) {
     ? (customCategoryText ? `Khác: ${customCategoryText}` : 'Khác')
     : rawCategory;
 
-  const defaultAssigneeEmail = currentUser.email || workspaceData.ownerEmail || 'nhilt@vaschools.edu.vn';
+  const defaultAssigneeEmail = currentUser.email || workspaceData.ownerEmail || '';
 
   const payload = {
     code: document.getElementById('task-code').value.trim(),
@@ -4773,7 +4915,7 @@ async function syncActiveEmployeeToFirestore() {
 
     if (targetWs && targetWs.ownerEmail) {
       const emailDocId = targetWs.ownerEmail.trim().toLowerCase();
-      if (emailDocId && !isSuperAdminEmail(emailDocId) && emailDocId !== 'vuongvq@vaschools.edu.vn') {
+      if (emailDocId && !isSuperAdminEmail(emailDocId) && !isModEmail(emailDocId)) {
         const docRef = fbDb.collection('wf_employees').doc(emailDocId);
         await docRef.set({
           empId: targetWs.empId || ('emp_' + emailDocId),
@@ -4817,7 +4959,7 @@ async function pushAllToFirestore() {
     const promises = Object.values(teamWorkspaces).map(ws => {
       if (!ws || !ws.ownerEmail) return Promise.resolve();
       const emailDocId = ws.ownerEmail.trim().toLowerCase();
-      if (!emailDocId || isSuperAdminEmail(emailDocId) || emailDocId === 'vuongvq@vaschools.edu.vn') {
+      if (!emailDocId || isSuperAdminEmail(emailDocId) || isModEmail(emailDocId)) {
         return Promise.resolve();
       }
       return fbDb.collection('wf_employees').doc(emailDocId).set({
