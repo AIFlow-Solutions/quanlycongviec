@@ -221,13 +221,54 @@ function getWeekRangeDisplay(offset = currentWeekOffset) {
   return `Tuần: ${mStr} – ${sStr}`;
 }
 
-// Check if task is overdue
+// Parse deadline date string safely: if only date is specified (YYYY-MM-DD), count until 23:59:59 of that day
+function parseDeadlineDate(dlStr) {
+  if (!dlStr) return null;
+  if (dlStr.length === 10) {
+    return new Date(dlStr + 'T23:59:59');
+  }
+  return new Date(dlStr);
+}
+
+// Calculate readable delay text between deadline and completion timestamp
+function getLateDurationText(deadlineStr, completedAtStr) {
+  if (!deadlineStr || !completedAtStr) return '';
+  const dlDate = parseDeadlineDate(deadlineStr);
+  const doneDate = new Date(completedAtStr);
+  if (!dlDate || isNaN(dlDate.getTime()) || isNaN(doneDate.getTime())) return '';
+  const diffMs = doneDate.getTime() - dlDate.getTime();
+  if (diffMs <= 0) return '';
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays > 0) {
+    const remHours = diffHours % 24;
+    return remHours > 0 ? `Trễ ${diffDays} ngày ${remHours} giờ` : `Trễ ${diffDays} ngày`;
+  }
+  if (diffHours > 0) {
+    const remMins = diffMins % 60;
+    return remMins > 0 ? `Trễ ${diffHours} giờ ${remMins} phút` : `Trễ ${diffHours} giờ`;
+  }
+  return `Trễ ${Math.max(1, diffMins)} phút`;
+}
+
+// Check if task is overdue or completed late
 function getEffectiveStatus(task) {
-  if (task.status === 'completed') return 'completed';
+  if (task.status === 'completed') {
+    if (task.deadline) {
+      const dlDate = parseDeadlineDate(task.deadline);
+      const dl = dlDate ? dlDate.getTime() : 0;
+      const done = task.completedAt ? new Date(task.completedAt).getTime() : (task.updatedAt ? new Date(task.updatedAt).getTime() : 0);
+      if (done && dl && done > dl) {
+        return 'completed_late';
+      }
+    }
+    return 'completed';
+  }
   if (task.deadline) {
     const now = new Date();
-    const dl = new Date(task.deadline);
-    if (dl < now) return 'overdue';
+    const dlDate = parseDeadlineDate(task.deadline);
+    if (dlDate && dlDate < now) return 'overdue';
   }
   return task.status; // 'pending' | 'in_progress'
 }
@@ -2439,6 +2480,7 @@ function renderKPICards(weekTasks) {
   const total = weekTasks.length;
   let inProgress = 0;
   let completed = 0;
+  let completedLate = 0;
   let overdueOrUrgent = 0;
   let ratedSum = 0;
   let ratedCount = 0;
@@ -2447,13 +2489,16 @@ function renderKPICards(weekTasks) {
 
   weekTasks.forEach(t => {
     const eff = getEffectiveStatus(t);
-    if (eff === 'completed') completed++;
-    else if (eff === 'in_progress') inProgress++;
+    if (eff === 'completed' || eff === 'completed_late') {
+      completed++;
+      if (eff === 'completed_late') completedLate++;
+    } else if (eff === 'in_progress') inProgress++;
 
     if (eff === 'overdue') {
       overdueOrUrgent++;
-    } else if (eff !== 'completed' && t.deadline) {
-      const hoursLeft = (new Date(t.deadline) - now) / (1000 * 60 * 60);
+    } else if (eff !== 'completed' && eff !== 'completed_late' && t.deadline) {
+      const dlDate = parseDeadlineDate(t.deadline);
+      const hoursLeft = dlDate ? (dlDate - now) / (1000 * 60 * 60) : 999;
       if (hoursLeft <= 24 && hoursLeft >= 0) overdueOrUrgent++;
     }
 
@@ -2474,7 +2519,9 @@ function renderKPICards(weekTasks) {
   document.getElementById('stat-total').textContent = total;
   document.getElementById('stat-inprogress').textContent = inProgress;
   document.getElementById('stat-completed').textContent = completed;
-  document.getElementById('stat-rate').textContent = `Tỷ lệ hoàn thành: ${rate}%`;
+  document.getElementById('stat-rate').textContent = completedLate > 0
+    ? `Tỷ lệ hoàn thành: ${rate}% (${completedLate} trễ)`
+    : `Tỷ lệ hoàn thành: ${rate}%`;
   document.getElementById('stat-overdue').textContent = overdueOrUrgent;
   document.getElementById('stat-rating').textContent = `${avgRating} / 5★`;
   document.getElementById('stat-reviewed-count').textContent = wkRev
@@ -2512,6 +2559,7 @@ function renderOverviewTab(weekTasks) {
               <span class="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-brand-700 border border-indigo-200/60">${escapeHtml(task.code)}</span>
               ${priorityBadge}
               ${statusBadge}
+              ${eff === 'completed_late' ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">⚠️ ${getLateDurationText(task.deadline, task.completedAt || task.updatedAt)}</span>` : ''}
               ${carriedBadge}
               <span class="text-[11px] text-slate-400">• Tiếp nhận: ${getDayOfWeekLabel(task.assignedDate)} (${formatVNDate(task.assignedDate)})</span>
             </div>
@@ -2579,7 +2627,10 @@ function renderOverviewTab(weekTasks) {
     d.setDate(mon.getDate() + idx);
     const dStr = toISODateString(d);
     const dayTasks = weekTasks.filter(t => t.assignedDate === dStr);
-    const doneCount = dayTasks.filter(t => t.status === 'completed').length;
+    const doneCount = dayTasks.filter(t => {
+      const e = getEffectiveStatus(t);
+      return e === 'completed' || e === 'completed_late';
+    }).length;
     const pct = weekTasks.length > 0 ? Math.min(100, Math.round((dayTasks.length / Math.max(4, weekTasks.length)) * 100)) : 0;
 
     return `
@@ -2612,7 +2663,16 @@ function renderDossierTable(weekTasks) {
       (t.client && t.client.toLowerCase().includes(search)) ||
       (t.notes && t.notes.toLowerCase().includes(search));
 
-    const matchStatus = statusFilter === 'all' || eff === statusFilter;
+    let matchStatus = statusFilter === 'all';
+    if (statusFilter === 'completed') {
+      matchStatus = eff === 'completed' || eff === 'completed_late';
+    } else if (statusFilter === 'completed_on_time') {
+      matchStatus = eff === 'completed';
+    } else if (statusFilter === 'completed_late') {
+      matchStatus = eff === 'completed_late';
+    } else if (statusFilter !== 'all') {
+      matchStatus = eff === statusFilter;
+    }
     const matchPriority = priorityFilter === 'all' || t.priority === priorityFilter;
 
     let matchDay = true;
@@ -2684,6 +2744,7 @@ function renderDossierTable(weekTasks) {
 
         <td class="py-3.5 px-3 whitespace-nowrap">
           ${getStatusBadgeHTML(eff)}
+          ${eff === 'completed_late' ? `<div class="text-[10px] font-semibold text-amber-700 mt-0.5">⚠️ ${getLateDurationText(task.deadline, task.completedAt || task.updatedAt)}</div>` : (eff === 'completed' && task.completedAt ? `<div class="text-[10px] text-emerald-600 mt-0.5 font-medium">✓ Đúng hạn</div>` : '')}
         </td>
 
         <td class="py-3.5 px-4 text-right whitespace-nowrap">
@@ -2854,10 +2915,11 @@ function renderWeeklyReportTab(weekTasks) {
 }
 
 function renderReportCharts(weekTasks) {
-  let completed = 0, inProgress = 0, pending = 0, overdue = 0;
+  let completedOnTime = 0, completedLate = 0, inProgress = 0, pending = 0, overdue = 0;
   weekTasks.forEach(t => {
     const eff = getEffectiveStatus(t);
-    if (eff === 'completed') completed++;
+    if (eff === 'completed') completedOnTime++;
+    else if (eff === 'completed_late') completedLate++;
     else if (eff === 'in_progress') inProgress++;
     else if (eff === 'overdue') overdue++;
     else pending++;
@@ -2869,10 +2931,10 @@ function renderReportCharts(weekTasks) {
     statusChartInstance = new Chart(ctxStatus, {
       type: 'doughnut',
       data: {
-        labels: ['Hoàn thành', 'Đang xử lý', 'Chờ xử lý', 'Quá hạn'],
+        labels: ['Đúng hạn', 'Hoàn thành muộn', 'Đang xử lý', 'Chờ xử lý', 'Quá hạn'],
         datasets: [{
-          data: [completed, inProgress, pending, overdue],
-          backgroundColor: ['#10b981', '#3b82f6', '#94a3b8', '#f43f5e'],
+          data: [completedOnTime, completedLate, inProgress, pending, overdue],
+          backgroundColor: ['#10b981', '#f59e0b', '#3b82f6', '#94a3b8', '#f43f5e'],
           borderWidth: 0
         }]
       },
@@ -2897,7 +2959,10 @@ function renderReportCharts(weekTasks) {
     const dStr = toISODateString(d);
     const dt = weekTasks.filter(t => t.assignedDate === dStr);
     assignedArr.push(dt.length);
-    doneArr.push(dt.filter(t => t.status === 'completed').length);
+    doneArr.push(dt.filter(t => {
+      const e = getEffectiveStatus(t);
+      return e === 'completed' || e === 'completed_late';
+    }).length);
   }
 
   const ctxDaily = document.getElementById('chart-daily');
@@ -3848,7 +3913,8 @@ function renderTeamTab() {
         const allTasks = Array.isArray(ws.tasks) ? ws.tasks : [];
         const wTasks = getWeekTasksFromList(allTasks);
         const listForSummary = wTasks.length > 0 ? wTasks : allTasks;
-        const doneCnt = listForSummary.filter(t => getEffectiveStatus(t) === 'completed').length;
+        const doneCnt = listForSummary.filter(t => { const e = getEffectiveStatus(t); return e === 'completed' || e === 'completed_late'; }).length;
+        const doneLateCnt = listForSummary.filter(t => getEffectiveStatus(t) === 'completed_late').length;
         const progCnt = listForSummary.filter(t => getEffectiveStatus(t) === 'in_progress').length;
         const overCnt = listForSummary.filter(t => getEffectiveStatus(t) === 'overdue').length;
         const adhocCnt = (ws.adhocTasks || []).length;
@@ -3864,6 +3930,7 @@ function renderTeamTab() {
             <td class="py-3.5 px-4">
               <div class="flex flex-wrap items-center gap-1.5">
                 <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[11px]">✅ Xong: ${doneCnt}/${listForSummary.length} HS</span>
+                ${doneLateCnt > 0 ? `<span class="px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-300 font-bold text-[11px]">⚠️ Xong muộn: ${doneLateCnt}</span>` : ''}
                 <span class="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-semibold text-[11px]">⚡ Đang làm: ${progCnt}</span>
                 ${overCnt > 0 ? `<span class="px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px]">🚨 Quá hạn: ${overCnt}</span>` : ''}
                 <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold text-[11px]">📌 Việc phát sinh: ${adhocCnt}</span>
@@ -3925,7 +3992,12 @@ function renderTeamTab() {
     const empTasks = taskTimeFilter === 'week' ? getWeekTasksFromList(rawTasks) : rawTasks;
     empTasks.forEach(t => {
       const eff = getEffectiveStatus(t);
-      if (taskStatusFilter !== 'all' && eff !== taskStatusFilter) return;
+      if (taskStatusFilter !== 'all') {
+        if (taskStatusFilter === 'completed' && eff !== 'completed' && eff !== 'completed_late') return;
+        else if (taskStatusFilter === 'completed_on_time' && eff !== 'completed') return;
+        else if (taskStatusFilter === 'completed_late' && eff !== 'completed_late') return;
+        else if (taskStatusFilter !== 'completed' && taskStatusFilter !== 'completed_on_time' && taskStatusFilter !== 'completed_late' && eff !== taskStatusFilter) return;
+      }
       allRows.push({ empId, empName: ws.ownerName, task: t });
     });
   });
@@ -3955,7 +4027,11 @@ function renderTeamTab() {
             </td>
             <td class="py-3 px-3 whitespace-nowrap text-slate-600">${formatVNDate(task.assignedDate)}</td>
             <td class="py-3 px-3 whitespace-nowrap ${eff === 'overdue' ? 'text-rose-600 font-bold' : 'text-slate-700'}">${formatVNDateTime(task.deadline)}</td>
-            <td class="py-3 px-3 whitespace-nowrap">${getStatusBadgeHTML(eff)} <span class="text-[11px] font-bold text-slate-600 ml-1">${task.progress}%</span></td>
+            <td class="py-3 px-3 whitespace-nowrap">
+              ${getStatusBadgeHTML(eff)}
+              ${eff === 'completed_late' ? `<div class="text-[10px] text-amber-700 font-bold mt-0.5">⚠️ ${getLateDurationText(task.deadline, task.completedAt || task.updatedAt)}</div>` : ''}
+              <span class="text-[11px] font-bold text-slate-600 ml-1">(${task.progress}%)</span>
+            </td>
             <td class="py-3 px-3 whitespace-nowrap">
               ${task.rating ? `<span class="text-blue-600 font-bold">${'★'.repeat(task.rating)}</span> <span class="text-[10px] text-slate-500">(${escapeHtml(task.approval || '')})</span>` : `<span class="text-[11px] text-slate-400 italic">Chưa chấm</span>`}
             </td>
@@ -3982,7 +4058,7 @@ function renderManagerWeeklyCharts(entries, currentFilterVal, mon) {
     const empTasks = getWeekTasksFromList(ws.tasks);
     empTasks.forEach(t => {
       const eff = getEffectiveStatus(t);
-      if (eff === 'completed') completed++;
+      if (eff === 'completed' || eff === 'completed_late') completed++;
       else if (eff === 'in_progress') inProgress++;
       else if (eff === 'overdue') overdue++;
       else pending++;
@@ -3992,7 +4068,7 @@ function renderManagerWeeklyCharts(entries, currentFilterVal, mon) {
         d.setDate(mon.getDate() + i);
         const dStr = toISODateString(d);
         if (t.assignedDate === dStr) dailyAssignedArr[i]++;
-        if (t.status === 'completed' && t.assignedDate === dStr) dailyDoneArr[i]++;
+        if ((t.status === 'completed' || eff === 'completed' || eff === 'completed_late') && t.assignedDate === dStr) dailyDoneArr[i]++;
       }
     });
   });
@@ -4322,7 +4398,16 @@ function handleTaskSubmit(e) {
         ? `Thay đổi: ${changes.join(' | ')}`
         : `Cập nhật hồ sơ (${payload.progress}%) — Ghi chú: ${payload.notes || 'Không đổi'}`;
 
-      workspaceData.tasks[idx] = { ...oldTask, ...payload, updatedAt: new Date().toISOString() };
+      let completedAt = oldTask.completedAt;
+      if (payload.status === 'completed') {
+        if (!completedAt || oldTask.status !== 'completed') {
+          completedAt = new Date().toISOString();
+        }
+      } else {
+        completedAt = null;
+      }
+
+      workspaceData.tasks[idx] = { ...oldTask, ...payload, completedAt, updatedAt: new Date().toISOString() };
       recordJournalLog(
         payload.status === 'completed' ? 'completed' : 'updated',
         payload.code,
@@ -4335,6 +4420,7 @@ function handleTaskSubmit(e) {
     const newTask = {
       id: 'task_' + Date.now(),
       ...payload,
+      completedAt: payload.status === 'completed' ? new Date().toISOString() : null,
       updatedAt: new Date().toISOString(),
       rating: null,
       approval: '',
@@ -4363,13 +4449,19 @@ function quickToggleComplete(taskId) {
   if (task.status === 'completed') {
     task.status = 'in_progress';
     task.progress = 50;
+    task.completedAt = null;
     recordJournalLog('updated', task.code, task.title, `Thay đổi trạng thái: Đã hoàn thành → Đang xử lý (50%) bởi ${currentUser.email}`);
     showToast(`Đã chuyển ${task.code} sang Đang thực hiện`, 'info');
   } else {
     task.status = 'completed';
     task.progress = 100;
-    recordJournalLog('completed', task.code, task.title, `Thay đổi trạng thái: Đánh dấu hoàn thành 100% đầu mục công việc bởi ${currentUser.email}`);
-    showToast(`Tuyệt vời! Đã hoàn thành hồ sơ ${task.code}`, 'success');
+    task.completedAt = new Date().toISOString();
+    const eff = getEffectiveStatus(task);
+    const isLate = eff === 'completed_late';
+    const lateDuration = isLate ? getLateDurationText(task.deadline, task.completedAt) : '';
+    const lateText = isLate ? ` (⚠️ Hoàn thành muộn: ${lateDuration})` : ' (Đúng hạn)';
+    recordJournalLog('completed', task.code, task.title, `Thay đổi trạng thái: Đánh dấu hoàn thành 100% đầu mục công việc bởi ${currentUser.email}${lateText}`);
+    showToast(isLate ? `Đã hoàn thành hồ sơ ${task.code} (Ghi nhận: Hoàn thành muộn - ${lateDuration})` : `Tuyệt vời! Đã hoàn thành hồ sơ ${task.code} đúng hạn`, isLate ? 'warning' : 'success');
   }
   saveWorkspaceData();
   renderAll();
@@ -4394,12 +4486,60 @@ function openReviewModal(taskId) {
   const task = workspaceData.tasks.find(t => t.id === taskId);
   if (!task) return;
 
+  const eff = getEffectiveStatus(task);
   document.getElementById('review-task-id').value = task.id;
   document.getElementById('review-task-code').textContent = task.code;
   document.getElementById('review-task-title').textContent = task.title;
-  document.getElementById('review-approval').value = task.approval || 'Đạt yêu cầu';
-  document.getElementById('review-feedback').value = task.managerFeedback || '';
-  setReviewStars(task.rating || 5);
+
+  const badgeEl = document.getElementById('review-task-badge');
+  if (badgeEl) badgeEl.innerHTML = getStatusBadgeHTML(eff);
+
+  const timingEl = document.getElementById('review-task-timing');
+  if (timingEl) {
+    if (eff === 'completed_late') {
+      const lateStr = getLateDurationText(task.deadline, task.completedAt || task.updatedAt);
+      timingEl.innerHTML = `
+        <div class="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs mt-2 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-amber-700 inline-flex items-center gap-1">⚠️ HOÀN THÀNH MUỘN (${lateStr})</span>
+            <span class="text-[11px] font-mono text-slate-500">Hạn: ${formatVNDateTime(task.deadline)}</span>
+          </div>
+          <div class="text-[11px] text-slate-700">
+            Nộp xong lúc: <strong>${formatVNDateTime(task.completedAt || task.updatedAt)}</strong>.
+            <span class="text-amber-800 italic block mt-0.5 font-medium">📌 Quản lý lưu ý xem xét trừ điểm tiến độ hoặc nhắc nhở khi đánh giá!</span>
+          </div>
+        </div>
+      `;
+    } else if (eff === 'completed') {
+      timingEl.innerHTML = `
+        <div class="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs mt-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-emerald-700 inline-flex items-center gap-1">✓ HOÀN THÀNH ĐÚNG HẠN</span>
+            <span class="text-[11px] font-mono text-slate-500">Hạn: ${formatVNDateTime(task.deadline)}</span>
+          </div>
+          <div class="text-[11px] text-slate-700 mt-1">
+            Nộp xong lúc: <strong>${formatVNDateTime(task.completedAt || task.updatedAt)}</strong> (Đúng cam kết tiến độ).
+          </div>
+        </div>
+      `;
+    } else if (eff === 'overdue') {
+      timingEl.innerHTML = `
+        <div class="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs mt-2">
+          <span class="font-bold text-rose-700">⚠️ ĐANG QUÁ HẠN CHƯA HOÀN THÀNH</span> (Hạn chót: ${formatVNDateTime(task.deadline)})
+        </div>
+      `;
+    } else {
+      timingEl.innerHTML = `
+        <div class="text-[11px] text-slate-500 mt-2">
+          📅 Hạn chót hoàn thành: <strong>${formatVNDateTime(task.deadline)}</strong>
+        </div>
+      `;
+    }
+  }
+
+  document.getElementById('review-approval').value = task.approval || (eff === 'completed_late' ? 'Cần bổ sung/chỉnh sửa' : 'Đạt yêu cầu');
+  document.getElementById('review-feedback').value = task.managerFeedback || (eff === 'completed_late' ? `Hồ sơ nộp muộn (${getLateDurationText(task.deadline, task.completedAt || task.updatedAt)}). Đã hoàn thành nhưng cần lưu ý thời gian.` : '');
+  setReviewStars(task.rating || (eff === 'completed_late' ? 3 : 5));
 
   document.getElementById('review-modal').classList.remove('hidden');
 }
@@ -4483,7 +4623,9 @@ function openWeeklyReviewModal(empId = null) {
     const allTasks = Array.isArray(targetWs.tasks) ? targetWs.tasks : [];
     const wTasks = getWeekTasksFromList(allTasks);
     const displayList = wTasks.length > 0 ? wTasks : allTasks;
-    const doneCnt = displayList.filter(t => getEffectiveStatus(t) === 'completed').length;
+    const doneCnt = displayList.filter(t => { const e = getEffectiveStatus(t); return e === 'completed' || e === 'completed_late'; }).length;
+    const doneOnTime = displayList.filter(t => getEffectiveStatus(t) === 'completed').length;
+    const doneLate = displayList.filter(t => getEffectiveStatus(t) === 'completed_late').length;
     const progCnt = displayList.filter(t => getEffectiveStatus(t) === 'in_progress').length;
     const overCnt = displayList.filter(t => getEffectiveStatus(t) === 'overdue').length;
     const adhocCnt = (targetWs.adhocTasks || []).length;
@@ -4496,31 +4638,42 @@ function openWeeklyReviewModal(empId = null) {
           <div class="text-[11px] font-mono text-slate-500">${escapeHtml(targetWs.ownerEmail)}</div>
         </div>
         <span class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-xs">
-          Hoàn thành: ${doneCnt}/${displayList.length} hồ sơ
+          Hoàn thành: ${doneCnt}/${displayList.length} hồ sơ ${doneLate > 0 ? `(${doneLate} trễ hạn)` : ''}
         </span>
       </div>
-      <div class="grid grid-cols-3 gap-2 pt-1 text-center text-[11px]">
-        <div class="p-1.5 rounded-lg bg-white border border-slate-200">
-          <span class="text-slate-500 block">Đang xử lý</span>
+      <div class="grid grid-cols-4 gap-1.5 pt-1 text-center text-[10px]">
+        <div class="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
+          <span class="text-emerald-700 block font-semibold">Đúng hạn</span>
+          <strong class="text-emerald-800 text-xs">${doneOnTime}</strong>
+        </div>
+        <div class="p-1.5 rounded-lg bg-amber-50 border border-amber-200">
+          <span class="text-amber-700 block font-semibold">Trễ hạn</span>
+          <strong class="${doneLate > 0 ? 'text-amber-700 font-bold' : 'text-slate-600'} text-xs">${doneLate}</strong>
+        </div>
+        <div class="p-1.5 rounded-lg bg-blue-50 border border-blue-200">
+          <span class="text-blue-700 block font-semibold">Đang làm</span>
           <strong class="text-blue-700 text-xs">${progCnt}</strong>
         </div>
-        <div class="p-1.5 rounded-lg bg-white border border-slate-200">
-          <span class="text-slate-500 block">Quá hạn</span>
-          <strong class="${overCnt > 0 ? 'text-rose-600' : 'text-slate-700'} text-xs">${overCnt}</strong>
-        </div>
-        <div class="p-1.5 rounded-lg bg-white border border-slate-200">
-          <span class="text-slate-500 block">Việc phát sinh</span>
-          <strong class="text-indigo-700 text-xs">${adhocCnt}</strong>
+        <div class="p-1.5 rounded-lg bg-rose-50 border border-rose-200">
+          <span class="text-rose-700 block font-semibold">Quá hạn</span>
+          <strong class="${overCnt > 0 ? 'text-rose-600 font-bold' : 'text-slate-600'} text-xs">${overCnt}</strong>
         </div>
       </div>
       ${displayList.length > 0 ? `
-        <div class="pt-1.5 space-y-1 max-h-28 overflow-y-auto text-[11px] text-slate-700">
-          ${displayList.map(t => `
-            <div class="flex items-center justify-between gap-2 bg-white px-2 py-1 rounded border border-slate-200/70">
+        <div class="pt-1.5 space-y-1 max-h-32 overflow-y-auto text-[11px] text-slate-700">
+          ${displayList.map(t => {
+            const eff = getEffectiveStatus(t);
+            const lateDuration = eff === 'completed_late' ? getLateDurationText(t.deadline, t.completedAt || t.updatedAt) : '';
+            return `
+            <div class="flex items-center justify-between gap-2 bg-white px-2 py-1.5 rounded border border-slate-200/70">
               <span class="truncate"><strong class="font-mono text-brand-700">[${escapeHtml(t.code)}]</strong> ${escapeHtml(t.title)}</span>
-              <span class="shrink-0 font-bold ${t.status === 'completed' ? 'text-emerald-700' : 'text-blue-700'}">${t.progress}%</span>
+              <div class="flex items-center gap-1.5 shrink-0">
+                ${eff === 'completed_late' ? `<span class="text-[10px] text-amber-700 font-bold bg-amber-100 px-1.5 py-0.5 rounded">⚠️ ${lateDuration}</span>` : ''}
+                ${getStatusBadgeHTML(eff)}
+              </div>
             </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
       ` : ''}
       ${empNote ? `<div class="pt-1 text-[11px] text-slate-600 italic"><strong>Báo cáo tuần của NV:</strong> "${escapeHtml(empNote)}"</div>` : ''}
@@ -4717,7 +4870,14 @@ function exportCSV() {
     t.priority,
     t.assignedDate,
     t.deadline,
-    getEffectiveStatus(t),
+    (() => {
+      const eff = getEffectiveStatus(t);
+      if (eff === 'completed_late') return `"Hoàn thành muộn (${getLateDurationText(t.deadline, t.completedAt || t.updatedAt)})"`;
+      if (eff === 'completed') return '"Hoàn thành đúng hạn"';
+      if (eff === 'overdue') return '"Quá hạn"';
+      if (eff === 'in_progress') return '"Đang thực hiện"';
+      return '"Chờ xử lý"';
+    })(),
     t.progress,
     t.rating || '',
     `"${(t.managerFeedback || '').replace(/"/g, '""')}"`
@@ -5046,7 +5206,8 @@ function getStatusBadgeHTML(effStatus) {
   const map = {
     pending: `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-[#dc3545] text-white">Chưa duyệt / Chờ</span>`,
     in_progress: `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-blue-600 text-white">Đang xử lý</span>`,
-    completed: `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-[#198754] text-white">Đã duyệt / Xong</span>`,
+    completed: `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-[#198754] text-white">✓ Đã duyệt (Đúng hạn)</span>`,
+    completed_late: `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-[#d97706] text-white">⚠️ Hoàn thành muộn</span>`,
     overdue: `<span class="inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold bg-[#b02a37] text-white">⚠️ Quá hạn</span>`
   };
   return map[effStatus] || map.pending;
