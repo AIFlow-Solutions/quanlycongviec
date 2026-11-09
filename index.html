@@ -41,7 +41,7 @@
 <body class="bg-[#e9ecef] text-slate-800 font-sans antialiased min-h-screen flex flex-col">
 
   <!-- TOP CRIMSON HEADER BAR (MATCHING ATTACHED SCREENSHOT) -->
-  <div class="crimson-top-bar text-white px-3 sm:px-6 py-2.5 sm:py-3 shadow-md flex flex-wrap items-center justify-between gap-2 sm:gap-3 sticky top-0 z-40">
+  <div class="crimson-top-bar text-white px-3 sm:px-6 py-2.5 sm:py-3 shadow-md flex flex-wrap items-center justify-between gap-2 sm:gap-3 sticky top-0 z-50">
     <div class="flex items-center space-x-2 sm:space-x-3 min-w-0">
       <!-- Mobile Hamburger Menu Button -->
       <button type="button" onclick="toggleMobileSidebar()" class="lg:hidden w-9 h-9 rounded-lg bg-white/15 hover:bg-white/25 border border-white/30 flex items-center justify-center shrink-0 transition" title="Mở menu điều hướng">
@@ -66,6 +66,11 @@
       <button id="top-bar-sync-btn" onclick="syncLoadFromCloud(false)" class="bg-white/15 hover:bg-white/25 border border-white/30 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="Bấm để đồng bộ dữ liệu mới nhất từ Cloud ngay lập tức">
         <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-300 shrink-0"></i>
         <span id="top-bar-sync-text" class="text-[11px] sm:text-xs">Đồng bộ Cloud</span>
+      </button>
+      <button id="top-bar-firebase-btn" onclick="openFirebaseConfigModal()" class="hidden bg-amber-500 hover:bg-amber-400 border border-amber-300 text-slate-950 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-bold flex items-center space-x-1 transition shadow-sm" title="Kết nối Cơ sở dữ liệu Firebase Firestore Realtime (Chỉ Super Admin)">
+        <i data-lucide="database" class="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0"></i>
+        <span class="hidden sm:inline">Database Firebase</span>
+        <span class="sm:hidden text-[11px]">Firebase</span>
       </button>
       <button id="top-bar-whitelist-btn" onclick="openWhitelistModal()" class="hidden bg-blue-600 hover:bg-blue-700 border border-blue-400 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="Quản lý danh sách Email được phép truy cập">
         <i data-lucide="user-check" class="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0"></i>
@@ -182,10 +187,10 @@
   <!-- MAIN APPLICATION LAYOUT -->
   <div class="flex-1 flex flex-col lg:flex-row relative">
     <!-- Mobile Sidebar Backdrop -->
-    <div id="mobile-sidebar-backdrop" onclick="closeMobileSidebar()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 hidden lg:hidden"></div>
+    <div id="mobile-sidebar-backdrop" onclick="closeMobileSidebar()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[60] hidden lg:hidden"></div>
     
     <!-- SIDEBAR NAVIGATION (Clean White + Crimson Theme matching screenshot, Slide-Over Drawer on Mobile) -->
-    <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white border-r border-slate-200 text-slate-700 flex flex-col justify-between shrink-0 transform -translate-x-full lg:translate-x-0 lg:static lg:w-64 lg:min-h-screen shadow-2xl lg:shadow-sm transition-transform duration-200 ease-in-out overflow-y-auto">
+    <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-[70] lg:z-10 w-72 max-w-[85vw] bg-white border-r border-slate-200 text-slate-700 flex flex-col justify-between shrink-0 transform -translate-x-full lg:translate-x-0 lg:transform-none lg:static lg:w-64 lg:min-h-screen shadow-2xl lg:shadow-sm transition-transform duration-200 ease-in-out overflow-y-auto">
       <div>
         <!-- Mobile Drawer Header -->
         <div class="flex lg:hidden items-center justify-between px-4 pt-3 pb-1 border-b border-slate-100">
@@ -1030,7 +1035,7 @@
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-4 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
                 <div>
                   <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Khoảng thời gian</label>
-                  <select id="mgr-journal-time-filter" onchange="teamFeedPage=1; renderTeamTab()" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-brand-600">
+                  <select id="mgr-journal-time-filter" onchange="pageState.teamFeed=1; renderTeamTab()" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-brand-600">
                     <option value="all">📅 Tất cả thời gian (Mọi tuần)</option>
                     <option value="last_week">⏪ Tuần vừa rồi (Tuần trước)</option>
                     <option value="selected_week">📆 Theo tuần đang chọn trên thanh lịch</option>
@@ -1039,7 +1044,7 @@
                 </div>
                 <div>
                   <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Loại hoạt động</label>
-                  <select id="mgr-journal-type-filter" onchange="teamFeedPage=1; renderTeamTab()" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-brand-600">
+                  <select id="mgr-journal-type-filter" onchange="pageState.teamFeed=1; renderTeamTab()" class="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-brand-600">
                     <option value="all">-- Tất cả hoạt động --</option>
                     <option value="dossier">📁 Hồ sơ (Tạo mới / Tiến độ / Hoàn thành)</option>
                     <option value="adhoc">⚡ Việc phát sinh & Ghi chú nhật ký</option>
@@ -1049,7 +1054,7 @@
                 </div>
                 <div>
                   <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Tìm kiếm nhanh</label>
-                  <input type="text" id="mgr-journal-search" oninput="teamFeedPage=1; renderTeamTab()" placeholder="Tìm theo tên NV, email, mã HS..." class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-brand-600" />
+                  <input type="text" id="mgr-journal-search" oninput="pageState.teamFeed=1; renderTeamTab()" placeholder="Tìm theo tên NV, email, mã HS..." class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none focus:border-brand-600" />
                 </div>
               </div>
 
@@ -1459,14 +1464,14 @@
   </div>
 
   <!-- ========================================================= -->
-  <!-- MODAL 5: FIREBASE CLOUD CONFIGURATION                     -->
+  <!-- MODAL 5: FIREBASE CLOUD CONFIGURATION (SUPER ADMIN ONLY)  -->
   <!-- ========================================================= -->
-  <div id="firebase-modal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="firebase-modal" class="fixed inset-0 z-[80] hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-fade-in">
       <div class="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
         <div class="flex items-center space-x-2">
-          <i data-lucide="cloud" class="w-5 h-5 text-brand-400"></i>
-          <h3 class="text-sm font-bold">Cấu hình Đồng bộ Đám mây (Firebase Auth + Firestore)</h3>
+          <i data-lucide="database" class="w-5 h-5 text-amber-400"></i>
+          <h3 class="text-sm font-bold">Kết nối Cơ sở dữ liệu Google Firebase Firestore (Realtime)</h3>
         </div>
         <button onclick="closeFirebaseConfigModal()" class="text-slate-400 hover:text-white">
           <i data-lucide="x" class="w-5 h-5"></i>
@@ -1474,34 +1479,36 @@
       </div>
 
       <div class="p-6 space-y-4 text-xs">
+        <div id="firebase-modal-status" class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs"></div>
+
         <p class="text-slate-600 leading-relaxed">
-          Hệ thống hỗ trợ kết nối trực tiếp với <strong>Google Firebase (Miễn phí)</strong> để đồng bộ hóa thời gian thực giữa nhiều máy tính của Nhân viên và Quản lý. Nếu để trống, ứng dụng vẫn hoạt động mượt mà với bộ nhớ trình duyệt & Link chia sẻ thông minh.
+          Khi <strong>Super Admin</strong> dán mã <code class="bg-slate-100 px-1 rounded">firebaseConfig</code> vào đây <strong>1 lần duy nhất</strong>, hệ thống sẽ tự động chia tách mỗi Email nhân viên thành 1 bảng dữ liệu độc lập (<code class="bg-slate-100 px-1 rounded">wf_employees/{email}</code>) và tự động kích hoạt ngầm cho toàn bộ máy của Nhân viên & Quản lý (nhân viên chỉ việc đăng nhập và sử dụng).
         </p>
 
         <div>
-          <label class="block font-semibold text-slate-700 mb-1">Dán chuỗi JSON `firebaseConfig` của bạn vào đây:</label>
-          <textarea id="firebase-config-input" rows="6" placeholder='{
-  "apiKey": "AIzaSy...",
-  "authDomain": "your-app.firebaseapp.com",
-  "projectId": "your-app",
-  "storageBucket": "your-app.appspot.com",
-  "messagingSenderId": "123456",
-  "appId": "1:123456:web:abcdef"
-}' class="w-full p-3 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+          <label class="block font-semibold text-slate-700 mb-1">Dán đoạn mã <code class="text-brand-700">firebaseConfig</code> (hoặc JSON) từ Firebase Console vào đây:</label>
+          <textarea id="firebase-config-input" rows="7" placeholder='const firebaseConfig = {
+  apiKey: "AIzaSy...",
+  authDomain: "your-app.firebaseapp.com",
+  projectId: "your-app",
+  storageBucket: "your-app.appspot.com",
+  messagingSenderId: "123456",
+  appId: "1:123456:web:abcdef"
+};' class="w-full p-3 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
         </div>
 
-        <div class="p-3 rounded-xl bg-blue-50 border border-blue-200 text-[11px] text-blue-800 space-y-1">
-          <div class="font-bold">Hướng dẫn lấy mã trong 1 phút:</div>
-          <div>1. Truy cập <a href="https://console.firebase.google.com" target="_blank" class="underline font-semibold">console.firebase.google.com</a> → Tạo Project mới.</div>
-          <div>2. Bật <strong>Authentication</strong> (Email/Password) và <strong>Firestore Database</strong> (Chế độ Test Mode).</div>
-          <div>3. Vào Project Settings → Web App (`</>`) → Copy `firebaseConfig` dán vào ô trên.</div>
+        <div class="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-[11px] text-blue-900 space-y-1.5">
+          <div class="font-bold text-blue-800">⚡ Cách tạo Database Firebase miễn phí (1 GB) trong 1 phút:</div>
+          <div>1. Mở <a href="https://console.firebase.google.com" target="_blank" class="underline font-bold text-blue-700">console.firebase.google.com</a> → Bấm <strong>Create a project</strong> (Tạo dự án).</div>
+          <div>2. Ở menu trái chọn <strong>Build → Firestore Database</strong> → Bấm <strong>Create database</strong> → Chọn <strong>Start in test mode</strong> (Chế độ Test Mode) → Bấm <strong>Create</strong>.</div>
+          <div>3. Bấm biểu tượng ⚙️ (<strong>Project settings</strong>) → Kéo xuống mục <strong>Your apps</strong> → Chọn biểu tượng Web <strong><code>&lt;/&gt;</code></strong> → Đặt tên bất kỳ → Copy đoạn <strong><code>firebaseConfig</code></strong> dán vào ô trên (hoặc gửi vào khung chat để nhúng cứng vào code).</div>
         </div>
 
         <div class="pt-3 flex items-center justify-between border-t border-slate-100">
-          <button type="button" onclick="clearFirebaseConfig()" class="text-rose-600 hover:underline font-medium">Xóa cấu hình Cloud</button>
+          <button type="button" onclick="clearFirebaseConfig()" class="text-rose-600 hover:underline font-medium">Ngắt kết nối</button>
           <div class="space-x-2">
             <button type="button" onclick="closeFirebaseConfigModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600">Đóng</button>
-            <button type="button" onclick="saveFirebaseConfig()" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold">Lưu & Kết nối Cloud</button>
+            <button type="button" onclick="saveFirebaseConfig()" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold shadow-sm">🔥 Lưu & Kích hoạt cho Toàn Hệ Thống</button>
           </div>
         </div>
       </div>

@@ -21,6 +21,17 @@ const STORAGE_KEYS = {
 // Nếu người tạo hệ thống xuất file HTML đã gắn sẵn Bưu tá, link sẽ nằm ở biến này để Sếp & Nhân viên dùng ngay:
 let EMBEDDED_OTP_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxt2t2M-08wJFZ0bAwo6VAtJ2aDJGPlaQk9RHVvv0e2eI2UtmVExnzda-OFXCbtkz5TLg/exec';
 
+// Cấu hình Firebase Firestore cố định cho toàn hệ thống (Nhân viên & Quản lý tự động kết nối Realtime mà không cần cài đặt gì):
+let EMBEDDED_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAu2Rplgc868aAr3ac_qnSucaHtDzzxz1s",
+  authDomain: "quanlycongviec-4ae62.firebaseapp.com",
+  projectId: "quanlycongviec-4ae62",
+  storageBucket: "quanlycongviec-4ae62.firebasestorage.app",
+  messagingSenderId: "470237119390",
+  appId: "1:470237119390:web:254f6ac2f9f4cc1952cc8f",
+  measurementId: "G-4JE4K832XK"
+};
+
 // Danh sách Email được khai báo trước (Phân cấp 3 tầng: Super Admin, Mod/Quản lý, Nhân viên):
 let DEFAULT_WHITELIST = [
   { email: 'thienlt@vaschools.edu.vn', name: 'Super Admin (thienlt@vaschools.edu.vn)', role: 'admin' },
@@ -268,23 +279,26 @@ function cleanForeignLogs() {
 }
 
 function ensureEmployeeWorkspaceMatched() {
-  if (!currentUser || currentUser.role !== 'employee' || !currentUser.email) return;
+  if (!currentUser || isManager(currentUser) || !currentUser.email) return;
   const cleanEmail = currentUser.email.trim().toLowerCase();
   const myEntry = Object.entries(teamWorkspaces).find(
-    ([, ws]) => (ws.ownerEmail || '').trim().toLowerCase() === cleanEmail
+    ([, ws]) => ws && (ws.ownerEmail || '').trim().toLowerCase() === cleanEmail
   );
   if (myEntry) {
     activeEmployeeId = myEntry[0];
     workspaceData = myEntry[1];
+    workspaceData.ownerEmail = cleanEmail;
+    if (!workspaceData.ownerName) workspaceData.ownerName = currentUser.name || cleanEmail;
     localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
     localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
   } else {
     const wsId = 'ws_' + btoa(encodeURIComponent(cleanEmail)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
     const newEmpId = 'emp_' + wsId;
     if (!teamWorkspaces[newEmpId]) {
+      const displayName = currentUser.name || cleanEmail;
       teamWorkspaces[newEmpId] = {
         empId: newEmpId,
-        ownerName: currentUser.name || cleanEmail,
+        ownerName: displayName.includes(cleanEmail) ? displayName : `${displayName} (${cleanEmail})`,
         ownerEmail: cleanEmail,
         position: 'Chuyên viên Pháp chế & Hồ sơ',
         updatedAt: new Date().toISOString(),
@@ -309,6 +323,7 @@ function loadWorkspaceFromLocal() {
     try {
       teamWorkspaces = JSON.parse(savedTeam);
       cleanForeignLogs();
+      mergeCloudAndLocalData({}, true);
       activeEmployeeId = (savedActiveId && teamWorkspaces[savedActiveId]) ? savedActiveId : Object.keys(teamWorkspaces)[0];
       workspaceData = teamWorkspaces[activeEmployeeId];
       ensureEmployeeWorkspaceMatched();
@@ -323,6 +338,7 @@ function loadWorkspaceFromLocal() {
     }
   }
   seedDefaultWorkspace();
+  mergeCloudAndLocalData({}, true);
   ensureEmployeeWorkspaceMatched();
 }
 
@@ -331,6 +347,9 @@ function generateInitialLogsFromTasks(tasks) {
 }
 
 function recordJournalLog(type, code, title, detail) {
+  if (!isManager(currentUser)) {
+    ensureEmployeeWorkspaceMatched();
+  }
   if (!workspaceData) return;
   if (!Array.isArray(workspaceData.activityLogs)) {
     workspaceData.activityLogs = [];
@@ -347,6 +366,9 @@ function recordJournalLog(type, code, title, detail) {
     actor: currentUser.email || currentUser.name
   };
   workspaceData.activityLogs.unshift(entry);
+  if (activeEmployeeId && activeEmployeeId !== 'all') {
+    teamWorkspaces[activeEmployeeId] = workspaceData;
+  }
 }
 
 function seedDefaultWorkspace() {
@@ -408,23 +430,32 @@ let permanentlyDeletedTrashIds = new Set();
 
 function mergeArraysById(cloudArr, localArr, idKey = 'id', preferLocal = false, excludedIds = new Set()) {
   const map = new Map();
-  (Array.isArray(cloudArr) ? cloudArr : []).forEach(item => {
-    if (item && item[idKey] && !excludedIds.has(item[idKey])) {
-      map.set(item[idKey], item);
+  const getKey = (item, idx) => {
+    if (!item) return null;
+    if (item[idKey]) return item[idKey];
+    const fallback = 'auto_' + (item.timestamp || item.dateStr || '') + '_' + (item.code || '') + '_' + (item.type || item.title || idx);
+    item[idKey] = fallback;
+    return fallback;
+  };
+  (Array.isArray(cloudArr) ? cloudArr : []).forEach((item, idx) => {
+    const k = getKey(item, idx);
+    if (k && !excludedIds.has(k)) {
+      map.set(k, item);
     }
   });
-  (Array.isArray(localArr) ? localArr : []).forEach(item => {
-    if (!item || !item[idKey] || excludedIds.has(item[idKey])) return;
-    const existing = map.get(item[idKey]);
+  (Array.isArray(localArr) ? localArr : []).forEach((item, idx) => {
+    const k = getKey(item, idx);
+    if (!k || excludedIds.has(k)) return;
+    const existing = map.get(k);
     if (!existing) {
-      map.set(item[idKey], item);
+      map.set(k, item);
     } else {
       const cloudTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
       const localTime = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
       if (localTime > cloudTime || (preferLocal && localTime >= cloudTime)) {
-        map.set(item[idKey], { ...existing, ...item });
+        map.set(k, { ...existing, ...item });
       } else {
-        map.set(item[idKey], { ...item, ...existing });
+        map.set(k, { ...item, ...existing });
       }
     }
   });
@@ -433,6 +464,18 @@ function mergeArraysById(cloudArr, localArr, idKey = 'id', preferLocal = false, 
 
 function mergeCloudAndLocalData(cloudData, preferLocal = false) {
   if (!cloudData || typeof cloudData !== 'object') return;
+
+  // 0. Nếu Super Admin đã cấu hình Firebase trên Cloud, tự động kích hoạt Firebase cho máy này (User không cần cài đặt gì)
+  if (cloudData.firebaseConfig && cloudData.firebaseConfig.apiKey && cloudData.firebaseConfig.projectId) {
+    const currentFbRaw = localStorage.getItem(STORAGE_KEYS.FIREBASE_CFG);
+    const incomingFbRaw = JSON.stringify(cloudData.firebaseConfig);
+    if (currentFbRaw !== incomingFbRaw) {
+      localStorage.setItem(STORAGE_KEYS.FIREBASE_CFG, incomingFbRaw);
+      if (!fbDb) {
+        setTimeout(() => initFirebaseIfConfigured(), 50);
+      }
+    }
+  }
 
   // 1. Hợp nhất danh sách Thùng rác (Trash)
   const cloudTrash = Array.isArray(cloudData.trashItems) ? cloudData.trashItems : [];
@@ -599,13 +642,18 @@ async function syncSaveToCloud() {
       }
 
       // BƯỚC 2: Đẩy dữ liệu đã hợp nhất đầy đủ lên Cloud
-      const payload = JSON.stringify({
+      const payloadObj = {
         teamWorkspaces: teamWorkspaces,
         whitelist: getWhitelist(),
         trashItems: getTrashItems(),
         updatedAt: new Date().toISOString(),
         updatedBy: currentUser.email || 'system'
-      });
+      };
+      const activeFbCfg = getActiveFirebaseConfig();
+      if (activeFbCfg) {
+        payloadObj.firebaseConfig = activeFbCfg;
+      }
+      const payload = JSON.stringify(payloadObj);
 
       const resp = await fetch(url, {
         method: 'POST',
@@ -633,6 +681,44 @@ async function syncSaveToCloud() {
 }
 
 async function syncLoadFromCloud(silent = false) {
+  // Ưu tiên 1: Nếu đã kết nối Firebase Firestore Realtime Database, đồng bộ trực tiếp từ Firestore (< 100ms)
+  if (fbDb) {
+    if (!silent) setSyncIndicator('Đang đồng bộ Firebase...', 'bg-blue-400 animate-pulse');
+    try {
+      const [sysDoc, empSnap] = await Promise.all([
+        fbDb.collection('wf_system').doc('global_state').get(),
+        fbDb.collection('wf_employees').get()
+      ]);
+      const incoming = { teamWorkspaces: {} };
+      if (sysDoc.exists) {
+        const sData = sysDoc.data();
+        if (sData) {
+          incoming.whitelist = sData.whitelist || [];
+          incoming.trashItems = sData.trashItems || [];
+        }
+      }
+      if (!empSnap.empty) {
+        empSnap.forEach(doc => {
+          const d = doc.data();
+          if (d && d.ownerEmail) {
+            const k = d.empId || ('emp_' + doc.id);
+            incoming.teamWorkspaces[k] = d;
+          }
+        });
+      }
+      mergeCloudAndLocalData(incoming, false);
+      hasCompletedInitialCloudLoad = true;
+      syncDailyDateWithSelectedWeek();
+      renderAll();
+      const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      setSyncIndicator(`🔥 Realtime Firebase (${timeStr})`, 'bg-emerald-400');
+      if (!silent) showToast('🔥 Đã đồng bộ dữ liệu thời gian thực từ Database Firebase!', 'success');
+      return;
+    } catch (fbErr) {
+      console.warn('Firestore direct load warning:', fbErr);
+    }
+  }
+
   const url = getOTPWebhookUrl();
   if (!url || isSyncingFromCloud) return;
 
@@ -648,14 +734,23 @@ async function syncLoadFromCloud(silent = false) {
     const res = await resp.json();
     if (res && res.ok && res.payload) {
       const cloudData = typeof res.payload === 'string' ? JSON.parse(res.payload) : res.payload;
-      if (cloudData && cloudData.teamWorkspaces && typeof cloudData.teamWorkspaces === 'object') {
+      if (cloudData && cloudData.teamWorkspaces && typeof cloudData.teamWorkspaces === 'object' && Object.keys(cloudData.teamWorkspaces).length > 0) {
         mergeCloudAndLocalData(cloudData, false);
         hasCompletedInitialCloudLoad = true;
+        syncDailyDateWithSelectedWeek();
         renderAll();
         if (!silent) showToast('☁️ Đã đồng bộ & hợp nhất dữ liệu mới nhất từ Cloud!', 'success');
+      } else {
+        mergeCloudAndLocalData(cloudData || {}, true);
+        hasCompletedInitialCloudLoad = true;
+        syncDailyDateWithSelectedWeek();
+        renderAll();
+        syncSaveToCloud();
       }
     } else if (res && res.ok && !res.payload) {
+      mergeCloudAndLocalData({}, true);
       hasCompletedInitialCloudLoad = true;
+      renderAll();
       syncSaveToCloud();
     }
     const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
@@ -672,9 +767,17 @@ async function syncLoadFromCloud(silent = false) {
 }
 
 function saveWorkspaceData() {
+  if (!isManager(currentUser)) {
+    ensureEmployeeWorkspaceMatched();
+  }
   if (!workspaceData) return;
   workspaceData.updatedAt = new Date().toISOString();
-  teamWorkspaces[activeEmployeeId] = workspaceData;
+  if (!isManager(currentUser) && currentUser && currentUser.email) {
+    workspaceData.ownerEmail = currentUser.email.trim().toLowerCase();
+  }
+  if (activeEmployeeId && activeEmployeeId !== 'all') {
+    teamWorkspaces[activeEmployeeId] = workspaceData;
+  }
 
   if (!isViewingShared) {
     localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(workspaceData));
@@ -682,15 +785,9 @@ function saveWorkspaceData() {
     localStorage.setItem(STORAGE_KEYS.ACTIVE_EMP_ID, activeEmployeeId);
   }
 
-  // Tự động đẩy dữ liệu lên Cloud
+  // Tự động đẩy dữ liệu lên Cloud (Google Apps Script + Firebase Firestore Realtime)
   syncSaveToCloud();
-
-  if (fbDb && currentUser.workspaceId) {
-    fbDb.collection('workspaces').doc(currentUser.workspaceId).set({
-      teamWorkspaces,
-      updatedAt: new Date().toISOString()
-    }, { merge: true }).catch(console.warn);
-  }
+  syncActiveEmployeeToFirestore();
 }
 
 function setSyncIndicator(text, dotColorClass) {
@@ -710,19 +807,35 @@ function setSyncIndicator(text, dotColorClass) {
 // 5. EMAIL WHITELIST + OTP AUTHENTICATION & ROLE LOCK
 // ==========================================
 function getWhitelist() {
+  const map = new Map();
+  DEFAULT_WHITELIST.forEach(item => {
+    if (item && item.email) {
+      map.set(item.email.trim().toLowerCase(), { ...item, email: item.email.trim().toLowerCase() });
+    }
+  });
   const saved = localStorage.getItem(STORAGE_KEYS.WHITELIST);
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) {
+        parsed.forEach(item => {
+          if (item && item.email) {
+            const clean = item.email.trim().toLowerCase();
+            map.set(clean, { ...item, email: clean });
+          }
+        });
+      }
     } catch (e) {}
   }
-  return DEFAULT_WHITELIST;
+  return Array.from(map.values());
 }
 
 function saveWhitelist(list, shouldSync = true) {
   localStorage.setItem(STORAGE_KEYS.WHITELIST, JSON.stringify(list));
-  if (shouldSync) syncSaveToCloud();
+  if (shouldSync) {
+    syncSaveToCloud();
+    syncSystemStateToFirestore();
+  }
 }
 
 function findWhitelistedAccount(email) {
@@ -896,6 +1009,7 @@ function handleAddWhitelistEmail(e) {
   }
 
   saveWhitelist(list);
+  pushAllToFirestore();
   document.getElementById('wl-email-input').value = '';
   document.getElementById('wl-name-input').value = '';
   renderWhitelistTable();
@@ -976,7 +1090,10 @@ function getTrashItems() {
 function saveTrashItems(items, shouldSync = true) {
   localStorage.setItem(STORAGE_KEYS.TRASH, JSON.stringify(items));
   updateTrashBadge();
-  if (shouldSync) syncSaveToCloud();
+  if (shouldSync) {
+    syncSaveToCloud();
+    syncSystemStateToFirestore();
+  }
 }
 
 function updateTrashBadge() {
@@ -1047,6 +1164,7 @@ function restoreTrashItem(trashId) {
   permanentlyDeletedTrashIds.add(trashId);
   trash.splice(idx, 1);
   saveTrashItems(trash);
+  pushAllToFirestore();
   renderTrashTable();
 }
 
@@ -1608,11 +1726,17 @@ function updateUserUI() {
   const topWhitelistBtn = document.getElementById('top-bar-whitelist-btn');
   const sideWhitelistBtn = document.getElementById('sidebar-whitelist-btn');
   const topTrashBtn = document.getElementById('top-bar-trash-btn');
+  const topFirebaseBtn = document.getElementById('top-bar-firebase-btn');
   const empHeaderActions = document.getElementById('employee-only-header-actions');
   const mgrHeaderActions = document.getElementById('manager-only-header-actions');
   const empKpiStrip = document.getElementById('employee-kpi-strip');
 
   updateTrashBadge();
+
+  if (topFirebaseBtn) {
+    // Chỉ hiển thị nút cấu hình Firebase cho Super Admin (Nhân viên và Mod không thấy, chỉ việc vào dùng)
+    topFirebaseBtn.classList.toggle('hidden', !isAdmin(currentUser));
+  }
 
   if (isManager(currentUser)) {
     if (isAdmin(currentUser)) {
@@ -3040,6 +3164,20 @@ function renderTeamTab() {
                           </div>
                         </div>
                       `).join('')}
+
+                      ${logsOnDay.map(l => {
+                        const tStr = l.timestamp ? new Date(l.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : (l.timeStr || '--:--');
+                        return `
+                          <div class="p-2 rounded-xl bg-slate-100/80 border border-slate-200/80 text-xs flex items-start gap-2">
+                            <span class="text-[10px] font-mono font-bold text-slate-600 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0">${tStr}</span>
+                            <div class="min-w-0 flex-1">
+                              <span class="font-mono text-[10px] font-bold text-brand-700 mr-1">${escapeHtml(l.code || '')}</span>
+                              <span class="font-semibold text-slate-800">${escapeHtml(l.title || '')}</span>
+                              ${l.detail ? `<div class="text-[10px] text-slate-500 mt-0.5">${escapeHtml(l.detail)}</div>` : ''}
+                            </div>
+                          </div>
+                        `;
+                      }).join('')}
                     </div>
                   `}
                 </div>
@@ -4022,7 +4160,7 @@ function exportJSONBackup() {
     exportedBy: currentUser ? currentUser.email : 'system',
     activeEmployeeId,
     teamWorkspaces,
-    whitelist: getEmailWhitelist(),
+    whitelist: getWhitelist(),
     trashItems: getTrashItems(),
     workspaceData
   };
@@ -4045,6 +4183,7 @@ function importJSONBackup(event) {
       if (imported && imported.teamWorkspaces) {
         mergeCloudAndLocalData(imported, false);
         saveWorkspaceData();
+        pushAllToFirestore();
         renderAll();
         closeShareModal();
         showToast('Đã khôi phục và gộp dữ liệu toàn hệ thống thành công!', 'success');
@@ -4066,81 +4205,255 @@ function importJSONBackup(event) {
 }
 
 // ==========================================
-// 15. FIREBASE CLOUD INTEGRATION (OPTIONAL)
+// 15. FIREBASE FIRESTORE REAL-TIME DATABASE (PER-EMAIL ISOLATION)
 // ==========================================
-function openFirebaseConfigModal() {
+let firestoreSysUnsubscribe = null;
+let isApplyingFirestoreSnapshot = false;
+
+function getActiveFirebaseConfig() {
+  if (EMBEDDED_FIREBASE_CONFIG && EMBEDDED_FIREBASE_CONFIG.apiKey && EMBEDDED_FIREBASE_CONFIG.projectId) {
+    return EMBEDDED_FIREBASE_CONFIG;
+  }
   const saved = localStorage.getItem(STORAGE_KEYS.FIREBASE_CFG);
-  if (saved) document.getElementById('firebase-config-input').value = saved;
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.apiKey && parsed.projectId) return parsed;
+    } catch (e) {}
+  }
+  return null;
+}
+
+function parseFirebaseConfigInput(rawText) {
+  if (!rawText) return null;
+  const text = rawText.trim();
+  // Thử parse JSON chuẩn trước
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && parsed.apiKey && parsed.projectId) return parsed;
+  } catch (e) {}
+
+  // Hỗ trợ dán nguyên đoạn mã const firebaseConfig = { apiKey: "...", ... }; từ Firebase Console
+  const keys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId', 'measurementId', 'databaseURL'];
+  const extracted = {};
+  keys.forEach(k => {
+    const regex = new RegExp(`["']?${k}["']?\\s*:\\s*["']([^"']+)["']`);
+    const m = text.match(regex);
+    if (m && m[1]) extracted[k] = m[1].trim();
+  });
+  if (extracted.apiKey && extracted.projectId) {
+    return extracted;
+  }
+  return null;
+}
+
+function openFirebaseConfigModal() {
+  if (!isAdmin(currentUser)) {
+    showToast('⛔ Chỉ Super Admin mới có quyền cấu hình kết nối Database Firebase!', 'error');
+    return;
+  }
+  const cfg = getActiveFirebaseConfig();
+  const input = document.getElementById('firebase-config-input');
+  if (input) {
+    input.value = cfg ? JSON.stringify(cfg, null, 2) : '';
+  }
+  const statusEl = document.getElementById('firebase-modal-status');
+  if (statusEl) {
+    if (fbDb && cfg) {
+      statusEl.innerHTML = `<span class="text-emerald-700 font-bold">🟢 Đang kết nối Realtime với Firebase Project: <code class="bg-emerald-100 px-1.5 py-0.5 rounded">${escapeHtml(cfg.projectId)}</code></span>`;
+    } else {
+      statusEl.innerHTML = `<span class="text-amber-700 font-semibold">⚪ Chưa kết nối Firebase (Đang chạy chế độ Cloud dự phòng). Dán mã bên dưới để kích hoạt Realtime Database.</span>`;
+    }
+  }
   document.getElementById('firebase-modal').classList.remove('hidden');
+  lucide.createIcons();
 }
 
 function closeFirebaseConfigModal() {
   document.getElementById('firebase-modal').classList.add('hidden');
 }
 
-function saveFirebaseConfig() {
-  const raw = document.getElementById('firebase-config-input').value.trim();
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed.apiKey || !parsed.projectId) {
-      showToast('Thiếu apiKey hoặc projectId trong cấu hình Firebase!', 'error');
-      return;
-    }
-    localStorage.setItem(STORAGE_KEYS.FIREBASE_CFG, JSON.stringify(parsed, null, 2));
-    initFirebaseIfConfigured();
-    closeFirebaseConfigModal();
-    showToast('Đã kết nối Firebase Cloud thành công!', 'success');
-  } catch (e) {
-    showToast('Chuỗi JSON không đúng định dạng. Vui lòng kiểm tra lại!', 'error');
+async function saveFirebaseConfig() {
+  const raw = (document.getElementById('firebase-config-input')?.value || '').trim();
+  const parsed = parseFirebaseConfigInput(raw);
+  if (!parsed || !parsed.apiKey || !parsed.projectId) {
+    showToast('⚠️ Không tìm thấy apiKey hoặc projectId! Hãy copy nguyên đoạn firebaseConfig từ Firebase Console dán vào.', 'error');
+    return;
   }
+
+  localStorage.setItem(STORAGE_KEYS.FIREBASE_CFG, JSON.stringify(parsed, null, 2));
+  initFirebaseIfConfigured();
+  // Đẩy toàn bộ dữ liệu nhân viên hiện có lên Firebase Firestore theo từng Email độc lập
+  await pushAllToFirestore();
+  // Phát tán cấu hình Firebase lên Cloud để toàn bộ máy của Nhân viên và Quản lý tự động kết nối mà không cần cài đặt
+  syncSaveToCloud();
+  closeFirebaseConfigModal();
+  showToast(`🔥 Đã kích hoạt Firebase Firestore (${parsed.projectId}) tự động cho toàn bộ Nhân viên & Quản lý!`, 'success');
 }
 
 function clearFirebaseConfig() {
+  if (!confirm('Bạn có chắc muốn ngắt kết nối Firebase trên trình duyệt này?')) return;
   localStorage.removeItem(STORAGE_KEYS.FIREBASE_CFG);
-  document.getElementById('firebase-config-input').value = '';
+  const input = document.getElementById('firebase-config-input');
+  if (input) input.value = '';
+  if (firestoreUnsubscribe) { firestoreUnsubscribe(); firestoreUnsubscribe = null; }
+  if (firestoreSysUnsubscribe) { firestoreSysUnsubscribe(); firestoreSysUnsubscribe = null; }
   fbApp = null;
   fbAuth = null;
   fbDb = null;
-  document.getElementById('auth-password-group').classList.add('hidden');
-  showToast('Đã chuyển về chế độ Lưu trữ thông minh trên trình duyệt.', 'info');
+  showToast('Đã ngắt kết nối Firebase.', 'info');
   closeFirebaseConfigModal();
 }
 
 function initFirebaseIfConfigured() {
-  const raw = localStorage.getItem(STORAGE_KEYS.FIREBASE_CFG);
-  if (!raw) return;
+  const cfg = getActiveFirebaseConfig();
+  if (!cfg || typeof firebase === 'undefined') return;
   try {
-    const cfg = JSON.parse(raw);
     if (!firebase.apps.length) {
       fbApp = firebase.initializeApp(cfg);
     } else {
       fbApp = firebase.app();
     }
-    fbAuth = firebase.auth();
     fbDb = firebase.firestore();
-    document.getElementById('auth-password-group').classList.remove('hidden');
-    document.getElementById('auth-cloud-label').textContent = `Đã kết nối Firebase: ${cfg.projectId}`;
-    if (currentUser.workspaceId) {
-      subscribeToFirestoreWorkspace(currentUser.workspaceId);
-    }
+    setSyncIndicator(`🔥 Firebase Realtime (${cfg.projectId})`, 'bg-emerald-400');
+    subscribeToFirestoreWorkspace();
   } catch (err) {
     console.warn('Firebase init error:', err);
   }
 }
 
-function subscribeToFirestoreWorkspace(wsId) {
+async function syncActiveEmployeeToFirestore() {
+  if (!fbDb || isApplyingFirestoreSnapshot) return;
+  try {
+    // Lưu chính xác theo từng Email nhân viên thành 1 Document riêng biệt trên Firestore
+    const targetWs = (!isManager(currentUser))
+      ? workspaceData
+      : (activeEmployeeId && activeEmployeeId !== 'all' ? teamWorkspaces[activeEmployeeId] : null);
+
+    if (targetWs && targetWs.ownerEmail) {
+      const emailDocId = targetWs.ownerEmail.trim().toLowerCase();
+      if (emailDocId && emailDocId !== 'thienlt@vaschools.edu.vn' && emailDocId !== 'vuongvq@vaschools.edu.vn') {
+        const docRef = fbDb.collection('wf_employees').doc(emailDocId);
+        await docRef.set({
+          empId: targetWs.empId || ('emp_' + emailDocId),
+          ownerName: targetWs.ownerName || emailDocId,
+          ownerEmail: emailDocId,
+          position: targetWs.position || 'Chuyên viên Pháp chế & Hồ sơ',
+          updatedAt: new Date().toISOString(),
+          tasks: Array.isArray(targetWs.tasks) ? targetWs.tasks : [],
+          adhocTasks: Array.isArray(targetWs.adhocTasks) ? targetWs.adhocTasks : [],
+          activityLogs: Array.isArray(targetWs.activityLogs) ? targetWs.activityLogs : [],
+          weeklyReviews: targetWs.weeklyReviews || {},
+          employeeNotes: targetWs.employeeNotes || {}
+        }, { merge: true });
+        const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+        setSyncIndicator(`🔥 Đã lưu Firebase (${timeStr})`, 'bg-emerald-400');
+      }
+    }
+  } catch (err) {
+    console.warn('Firestore employee sync warning:', err);
+  }
+}
+
+async function syncSystemStateToFirestore() {
+  if (!fbDb || isApplyingFirestoreSnapshot) return;
+  try {
+    await fbDb.collection('wf_system').doc('global_state').set({
+      whitelist: getWhitelist(),
+      trashItems: getTrashItems(),
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser.email || 'system'
+    }, { merge: true });
+  } catch (err) {
+    console.warn('Firestore system sync warning:', err);
+  }
+}
+
+async function pushAllToFirestore() {
+  if (!fbDb) return;
+  try {
+    await syncSystemStateToFirestore();
+    const promises = Object.values(teamWorkspaces).map(ws => {
+      if (!ws || !ws.ownerEmail) return Promise.resolve();
+      const emailDocId = ws.ownerEmail.trim().toLowerCase();
+      if (!emailDocId || emailDocId === 'thienlt@vaschools.edu.vn' || emailDocId === 'vuongvq@vaschools.edu.vn') {
+        return Promise.resolve();
+      }
+      return fbDb.collection('wf_employees').doc(emailDocId).set({
+        empId: ws.empId || ('emp_' + emailDocId),
+        ownerName: ws.ownerName || emailDocId,
+        ownerEmail: emailDocId,
+        position: ws.position || 'Chuyên viên Pháp chế & Hồ sơ',
+        updatedAt: ws.updatedAt || new Date().toISOString(),
+        tasks: Array.isArray(ws.tasks) ? ws.tasks : [],
+        adhocTasks: Array.isArray(ws.adhocTasks) ? ws.adhocTasks : [],
+        activityLogs: Array.isArray(ws.activityLogs) ? ws.activityLogs : [],
+        weeklyReviews: ws.weeklyReviews || {},
+        employeeNotes: ws.employeeNotes || {}
+      }, { merge: true });
+    });
+    await Promise.all(promises);
+  } catch (err) {
+    console.warn('Push all to Firestore warning:', err);
+  }
+}
+
+function subscribeToFirestoreWorkspace() {
   if (!fbDb) return;
   if (firestoreUnsubscribe) firestoreUnsubscribe();
-  firestoreUnsubscribe = fbDb.collection('workspaces').doc(wsId)
+  if (firestoreSysUnsubscribe) firestoreSysUnsubscribe();
+
+  // 1. Lắng nghe Thời gian thực (Realtime) Danh sách Email cấp quyền & Thùng rác
+  firestoreSysUnsubscribe = fbDb.collection('wf_system').doc('global_state')
     .onSnapshot((doc) => {
       if (doc.exists) {
-        workspaceData = doc.data();
-        renderAll();
-        setSyncIndicator('Đồng bộ Realtime', 'bg-emerald-400');
+        const sysData = doc.data();
+        if (sysData) {
+          isApplyingFirestoreSnapshot = true;
+          try {
+            mergeCloudAndLocalData({
+              whitelist: sysData.whitelist || [],
+              trashItems: sysData.trashItems || [],
+              teamWorkspaces: {}
+            }, false);
+            renderAll();
+          } finally {
+            isApplyingFirestoreSnapshot = false;
+          }
+        }
       } else {
-        saveWorkspaceData();
+        syncSystemStateToFirestore();
       }
-    });
+    }, (err) => console.warn('Firestore system listener warning:', err));
+
+  // 2. Lắng nghe Thời gian thực (Realtime) toàn bộ Hồ sơ & Nhật ký của từng Nhân viên theo Email
+  firestoreUnsubscribe = fbDb.collection('wf_employees')
+    .onSnapshot((snapshot) => {
+      if (snapshot.empty) {
+        pushAllToFirestore();
+        return;
+      }
+      const incomingTeam = {};
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data && data.ownerEmail) {
+          const key = data.empId || ('emp_' + doc.id);
+          incomingTeam[key] = data;
+        }
+      });
+      if (Object.keys(incomingTeam).length > 0) {
+        isApplyingFirestoreSnapshot = true;
+        try {
+          mergeCloudAndLocalData({ teamWorkspaces: incomingTeam }, false);
+          hasCompletedInitialCloudLoad = true;
+          renderAll();
+          const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+          setSyncIndicator(`🔥 Realtime Firebase (${timeStr})`, 'bg-emerald-400');
+        } finally {
+          isApplyingFirestoreSnapshot = false;
+        }
+      }
+    }, (err) => console.warn('Firestore employees listener warning:', err));
 }
 
 // ==========================================
