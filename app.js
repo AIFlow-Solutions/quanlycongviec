@@ -5630,7 +5630,7 @@ function orderPortalLoginHTML() {
           <div class="w-16 h-16 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center p-2 mb-4 backdrop-blur shadow-md">
             <img src="logo-vaschools.png" alt="VAschools Logo" class="w-full h-full object-contain filter drop-shadow" />
           </div>
-          <span class="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white/15 border border-white/20 rounded-full px-3 py-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i>Hệ thống VASchools</span>
+          <span class="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white/15 border border-white/20 rounded-full px-3 py-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i>Hệ thống VA Schools</span>
           <h2 class="text-2xl font-extrabold mt-5 leading-snug">Gửi hồ sơ <br/>chỉ trong 1 phút</h2>
           <p class="text-rose-100 text-sm mt-3">Hệ thống tự cấp mã, ghi nhận thời gian và cho bạn theo dõi tiến trình từng bước cho đến khi hoàn tất.</p>
         </div>
