@@ -5626,7 +5626,7 @@ function orderPortalLoginHTML() {
         <div class="absolute -left-10 bottom-10 w-40 h-40 rounded-full bg-white/5"></div>
         <div class="relative">
           <span class="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white/15 border border-white/20 rounded-full px-3 py-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i>Dành cho tất cả phòng ban</span>
-          <h2 class="text-2xl font-extrabold mt-5 leading-snug">Gửi hồ sơ trình ký<br/>chỉ trong 1 phút</h2>
+          <h2 class="text-2xl font-extrabold mt-5 leading-snug">Gửi hồ sơ <br/>chỉ trong 1 phút</h2>
           <p class="text-rose-100 text-sm mt-3">Hệ thống tự cấp mã, ghi nhận thời gian và cho bạn theo dõi tiến trình từng bước cho đến khi hoàn tất.</p>
         </div>
         <ul class="relative space-y-3 text-sm mt-8">
@@ -5733,7 +5733,7 @@ function orderFormHTML() {
       <div class="grid sm:grid-cols-2 gap-4">
         <div><label class="order-label">Ngày gửi hồ sơ <span class="text-rose-500">*</span></label><input id="of-sent" type="date" required class="order-input" value="${o.sentDate || orderTodayStr()}" /></div>
         <div><label class="order-label">Hạn cuối cần trả hồ sơ <span class="text-rose-500">*</span></label><input id="of-deadline" type="date" required class="order-input" min="${orderTodayStr()}" value="${o.deadline || orderTodayStr(3)}" /></div>
-        <div class="sm:col-span-2"><label class="order-label">Nội dung hồ sơ <span class="text-rose-500">*</span></label><textarea id="of-content" required rows="3" class="order-input" placeholder="Mô tả tóm tắt nội dung trình ký...">${escapeHtml(o.content || '')}</textarea></div>
+        <div class="sm:col-span-2"><label class="order-label">Nội dung hồ sơ <span class="text-rose-500">*</span></label><textarea id="of-content" required rows="3" class="order-input" placeholder="Mô tả tóm tắt nội dung...">${escapeHtml(o.content || '')}</textarea></div>
         <div class="sm:col-span-2"><label class="order-label">Ghi chú <span class="text-brand-600 font-normal">(dán link tờ trình / đề xuất / kế hoạch — link sẽ bấm được ở phần chi tiết)</span></label><textarea id="of-note" rows="2" class="order-input" placeholder="https://drive.google.com/...">${escapeHtml(o.note || '')}</textarea></div>
       </div>
     </div>
