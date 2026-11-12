@@ -5551,8 +5551,9 @@ function orderIsValidSenderEmail(email) {
   const clean = email.trim().toLowerCase();
   // Ở chế độ demo hoặc tài khoản đặc biệt cho phép test
   if (ORDER_DEMO_MODE || clean.includes('demo') || clean.includes('test')) return true;
-  // Bắt buộc email nội bộ trường VA Schools
-  return clean.endsWith('@vaschools.edu.vn');
+  // Bắt buộc email nội bộ trường VA Schools (chấp nhận cả @vaschools.edu.vn và các phân hiệu như @hcm.vaschools.edu.vn)
+  const domain = clean.split('@')[1] || '';
+  return domain === 'vaschools.edu.vn' || domain.endsWith('.vaschools.edu.vn');
 }
 
 async function orderPortalGoogleLogin() {
@@ -5569,7 +5570,6 @@ async function orderPortalGoogleLogin() {
     }
     const provider = new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({
-      hd: 'vaschools.edu.vn',
       prompt: 'select_account'
     });
     const result = await firebase.auth().signInWithPopup(provider);
@@ -5579,7 +5579,7 @@ async function orderPortalGoogleLogin() {
     const cleanEmail = user.email.trim().toLowerCase();
     if (!orderIsValidSenderEmail(cleanEmail)) {
       await firebase.auth().signOut();
-      showToast('⛔ Chỉ chấp nhận tài khoản Google của trường (@vaschools.edu.vn)!', 'error');
+      showToast('⛔ Chỉ chấp nhận tài khoản Google của trường VA Schools (*.vaschools.edu.vn)!', 'error');
       if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
       return;
     }
@@ -5720,7 +5720,7 @@ function orderPortalLoginHTML() {
         </div>
         <h3 class="text-2xl font-black text-slate-800 tracking-tight">Cổng Tiếp Nhận Hồ Sơ</h3>
         <p class="text-sm text-slate-600 mt-2 mb-7 leading-relaxed">
-          Bộ Phận Pháp Chế • Đăng nhập bằng tài khoản Google trường (<span class="font-bold text-brand-800">@vaschools.edu.vn</span>) để xác thực chính chủ và gửi yêu cầu hồ sơ.
+          Bộ Phận Pháp Chế • Đăng nhập bằng tài khoản Google trường (<span class="font-bold text-brand-800">Email VA Schools</span>) để xác thực chính chủ và gửi yêu cầu hồ sơ.
         </p>
 
         <!-- Nút Đăng nhập bằng Google chính thức duy nhất -->
@@ -5731,12 +5731,12 @@ function orderPortalLoginHTML() {
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
           </svg>
-          <span class="tracking-wide">Đăng nhập bằng Google (@vaschools.edu.vn)</span>
+          <span class="tracking-wide">Đăng nhập bằng Google (Email VA Schools)</span>
         </button>
 
         <div class="mt-6 p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs leading-relaxed flex items-start gap-3">
           <i data-lucide="info" class="w-4 h-4 shrink-0 text-amber-600 mt-0.5"></i>
-          <span>Hệ thống chỉ chấp nhận tài khoản Google thuộc hệ thống trường <b>VA Schools</b> (định dạng <code class="bg-amber-100 text-amber-950 font-bold px-1.5 py-0.5 rounded font-mono">@vaschools.edu.vn</code>) để đảm bảo tính xác thực nội bộ.</span>
+          <span>Hệ thống chấp nhận tất cả tài khoản Google thuộc hệ thống trường <b>VA Schools</b> (bao gồm <code class="bg-amber-100 text-amber-950 font-bold px-1.5 py-0.5 rounded font-mono">@vaschools.edu.vn</code> và các phân hiệu như <code class="bg-amber-100 text-amber-950 font-bold px-1.5 py-0.5 rounded font-mono">@hcm.vaschools.edu.vn</code>).</span>
         </div>
       </div>
     </div>
