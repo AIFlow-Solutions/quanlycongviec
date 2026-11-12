@@ -5450,17 +5450,23 @@ async function orderLoadStaff() {
   if (ORDER_DEMO_MODE && wl.length < 6) {
     wl = wl.concat([
       { email: 'lan.nguyen@demo.vn', name: 'Nguyễn Thị Lan', role: 'employee' },
-      { email: 'minh.tran@demo.vn', name: 'Trần Quang Minh', role: 'employee' },
-      { email: 'huong.le@demo.vn', name: 'Lê Thu Hương', role: 'mod' }
+      { email: 'minh.tran@demo.vn', name: 'Trần Quang Minh', role: 'employee' }
     ]);
   }
   const seen = new Set();
   orderStaffCache = wl
-    .filter(w => w && w.email)
+    .filter(w => {
+      if (!w || !w.email) return false;
+      const em = w.email.trim().toLowerCase();
+      // CHỈ HIỂN THỊ NHÂN VIÊN XỬ LÝ (loại bỏ hoàn toàn Super Admin và Quản lý / Mod)
+      if (isSuperAdminEmail(em) || isModEmail(em)) return false;
+      if (w.role === 'admin' || w.role === 'mod' || w.role === 'manager') return false;
+      return true;
+    })
     .map(w => ({
       email: w.email.trim().toLowerCase(),
       name: String(w.name || w.email).replace(/^(Nhân viên|Quản lý \/ Mod|Super Admin)\s*\((.+)\)$/, '$2'),
-      role: w.role || 'employee'
+      role: 'employee'
     }))
     .filter(w => !seen.has(w.email) && seen.add(w.email));
   return orderStaffCache;
@@ -5549,6 +5555,57 @@ function orderIsValidSenderEmail(email) {
   return clean.endsWith('@vaschools.edu.vn');
 }
 
+async function orderPortalGoogleLogin() {
+  const btn = document.getElementById('op-google-login-btn');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="order-spinner" style="border-top-color:#9e0b22;border-color:rgba(158,11,34,.3);"></span> <span class="text-slate-600">Đang kết nối Google...</span>';
+  }
+  try {
+    initFirebaseIfConfigured();
+    if (typeof firebase === 'undefined' || !firebase.apps.length || typeof firebase.auth !== 'function') {
+      throw new Error('Dịch vụ Google Auth chưa được khởi tạo');
+    }
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({
+      hd: 'vaschools.edu.vn',
+      prompt: 'select_account'
+    });
+    const result = await firebase.auth().signInWithPopup(provider);
+    const user = result.user;
+    if (!user || !user.email) throw new Error('Không nhận được thông tin email từ Google.');
+
+    const cleanEmail = user.email.trim().toLowerCase();
+    if (!orderIsValidSenderEmail(cleanEmail)) {
+      await firebase.auth().signOut();
+      showToast('⛔ Chỉ chấp nhận tài khoản Google của trường (@vaschools.edu.vn)!', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
+      return;
+    }
+
+    orderPortalUser = {
+      email: cleanEmail,
+      name: user.displayName || cleanEmail.split('@')[0],
+      avatar: user.photoURL || ''
+    };
+    showToast(`Đăng nhập Google thành công! Xin chào ${orderPortalUser.name}`, 'success');
+    orderAfterPortalLogin();
+  } catch (err) {
+    console.warn('Google sign-in warning:', err);
+    if (err.code === 'auth/popup-closed-by-user') {
+      showToast('Bạn đã đóng cửa sổ đăng nhập Google.', 'info');
+    } else if (err.code === 'auth/unauthorized-domain') {
+      showToast('⚠️ Domain chưa khai báo trong Firebase Auth. Vui lòng dùng tùy chọn nhập bên dưới.', 'error');
+      document.getElementById('op-manual-fallback')?.classList.remove('hidden');
+    } else {
+      showToast(err.message || 'Lỗi đăng nhập Google', 'error');
+      document.getElementById('op-manual-fallback')?.classList.remove('hidden');
+    }
+    if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
+  }
+}
+
 async function orderPortalQuickLogin(e) {
   e.preventDefault();
   const email = document.getElementById('op-login-email').value.trim().toLowerCase();
@@ -5562,7 +5619,7 @@ async function orderPortalQuickLogin(e) {
     return;
   }
   if (!orderIsValidSenderEmail(email)) {
-    showToast('Cổng Order chỉ áp dụng cho Email nội bộ trường (@vaschools.edu.vn)!', 'error');
+    showToast('Cổng Tiếp Nhận chỉ áp dụng cho Email nội bộ trường (@vaschools.edu.vn)!', 'error');
     return;
   }
   orderPortalUser = { email, name };
@@ -5588,7 +5645,7 @@ function orderRenderPortal() {
           <img src="logo-vaschools.png" alt="VAschools Logo" class="w-full h-full object-contain filter drop-shadow" />
         </div>
         <div class="min-w-0">
-          <h1 class="font-extrabold tracking-wide text-sm sm:text-lg leading-tight truncate">CỔNG TIẾP NHẬN YÊU CẦU - BỘ PHẬN PHÁP CHẾ </h1>
+          <h1 class="font-extrabold tracking-wide text-sm sm:text-lg leading-tight truncate">CỔNG TIẾP NHẬN HỒ SƠ - BỘ PHẬN PHÁP CHẾ</h1>
           <p class="text-[11px] text-rose-100/90 truncate">Gửi yêu cầu hồ sơ – hệ thống tự ghi nhận – theo dõi tiến trình realtime</p>
         </div>
       </div>
@@ -5630,8 +5687,8 @@ function orderPortalLoginHTML() {
           <div class="w-16 h-16 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center p-2 mb-4 backdrop-blur shadow-md">
             <img src="logo-vaschools.png" alt="VAschools Logo" class="w-full h-full object-contain filter drop-shadow" />
           </div>
-          <span class="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white/15 border border-white/20 rounded-full px-3 py-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i>Hệ thống VA Schools</span>
-          <h2 class="text-2xl font-extrabold mt-5 leading-snug">Gửi hồ sơ <br/>chỉ trong 1 phút</h2>
+          <span class="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white/15 border border-white/20 rounded-full px-3 py-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i>Hệ thống VASchools</span>
+          <h2 class="text-2xl font-extrabold mt-5 leading-snug">Gửi hồ sơ trình ký<br/>chỉ trong 1 phút</h2>
           <p class="text-rose-100 text-sm mt-3">Hệ thống tự cấp mã, ghi nhận thời gian và cho bạn theo dõi tiến trình từng bước cho đến khi hoàn tất.</p>
         </div>
         <ul class="relative space-y-3 text-sm mt-8">
@@ -5641,10 +5698,28 @@ function orderPortalLoginHTML() {
         </ul>
       </div>
       <div class="p-6 sm:p-10 flex flex-col justify-center">
-        <div class="flex items-center gap-2 text-brand-700 mb-1"><i data-lucide="shield-check" class="w-5 h-5"></i><span class="text-xs font-bold uppercase tracking-wider">Xác thực Nội bộ VA Schools</span></div>
-        <h3 class="text-xl font-extrabold text-slate-800">Đăng nhập Cổng Order</h3>
-        <p class="text-xs text-slate-500 mt-1 mb-6">Đăng nhập nhanh bằng Email trường <code class="text-brand-700 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">@vaschools.edu.vn</code> — không cần nhập OTP.</p>
-        <form onsubmit="orderPortalQuickLogin(event)" class="space-y-4">
+        <div class="flex items-center gap-2 text-brand-700 mb-1"><i data-lucide="shield-check" class="w-5 h-5"></i><span class="text-xs font-bold uppercase tracking-wider">Xác thực Nội bộ VASchools</span></div>
+        <h3 class="text-xl font-extrabold text-slate-800">Cổng Tiếp Nhận Hồ Sơ</h3>
+        <p class="text-xs text-slate-500 mt-1 mb-4">Bộ Phận Pháp Chế • Đăng nhập bằng tài khoản Google trường để xác thực chính chủ.</p>
+
+        <!-- Nút Đăng nhập bằng Google chính thức -->
+        <button type="button" id="op-google-login-btn" onclick="orderPortalGoogleLogin()" class="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-2xl bg-white hover:bg-slate-50 border-2 border-slate-200 text-slate-800 text-xs sm:text-sm font-bold shadow-xs transition hover:shadow hover:border-slate-300">
+          <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span>Đăng nhập bằng Google (@vaschools.edu.vn)</span>
+        </button>
+
+        <!-- Divider -->
+        <div class="relative flex items-center justify-center my-3.5">
+          <div class="border-t border-slate-200 w-full"></div>
+          <span class="bg-white px-2.5 text-[11px] text-slate-400 font-medium whitespace-nowrap">hoặc nhập thông tin trực tiếp</span>
+        </div>
+
+        <form onsubmit="orderPortalQuickLogin(event)" class="space-y-3.5">
           <div>
             <label class="order-label">Họ và tên người gửi <span class="text-rose-500">*</span></label>
             <div class="relative">
@@ -5660,8 +5735,8 @@ function orderPortalLoginHTML() {
             </div>
             <p class="text-[11px] text-slate-400 mt-1">Dùng email này để xem danh sách & theo dõi tiến trình hồ sơ của bạn.</p>
           </div>
-          <button id="op-login-btn" class="order-btn-primary w-full justify-center text-sm py-3 mt-2 shadow-md">
-            <i data-lucide="log-in" class="w-4 h-4"></i>Vào Cổng Gửi Order
+          <button id="op-login-btn" class="order-btn-primary w-full justify-center text-sm py-2.5 mt-1 shadow-md">
+            <i data-lucide="log-in" class="w-4 h-4"></i>Vào Cổng Tiếp Nhận Hồ Sơ
           </button>
         </form>
       </div>
@@ -5738,7 +5813,7 @@ function orderFormHTML() {
       <div class="grid sm:grid-cols-2 gap-4">
         <div><label class="order-label">Ngày gửi hồ sơ <span class="text-rose-500">*</span></label><input id="of-sent" type="date" required class="order-input" value="${o.sentDate || orderTodayStr()}" /></div>
         <div><label class="order-label">Hạn cuối cần trả hồ sơ <span class="text-rose-500">*</span></label><input id="of-deadline" type="date" required class="order-input" min="${orderTodayStr()}" value="${o.deadline || orderTodayStr(3)}" /></div>
-        <div class="sm:col-span-2"><label class="order-label">Nội dung hồ sơ <span class="text-rose-500">*</span></label><textarea id="of-content" required rows="3" class="order-input" placeholder="Mô tả tóm tắt nội dung...">${escapeHtml(o.content || '')}</textarea></div>
+        <div class="sm:col-span-2"><label class="order-label">Nội dung hồ sơ <span class="text-rose-500">*</span></label><textarea id="of-content" required rows="3" class="order-input" placeholder="Mô tả tóm tắt nội dung trình ký...">${escapeHtml(o.content || '')}</textarea></div>
         <div class="sm:col-span-2"><label class="order-label">Ghi chú <span class="text-brand-600 font-normal">(dán link tờ trình / đề xuất / kế hoạch — link sẽ bấm được ở phần chi tiết)</span></label><textarea id="of-note" rows="2" class="order-input" placeholder="https://drive.google.com/...">${escapeHtml(o.note || '')}</textarea></div>
       </div>
     </div>
@@ -6154,7 +6229,7 @@ function orderSetInboxFilter(k, v) { orderInboxFilters[k] = v; orderRerender(); 
 function orderSetInboxView(v) { orderInboxView = v; orderRerender(); }
 function orderCopyPortalLink() {
   const url = `${location.origin}${location.pathname}#order`;
-  navigator.clipboard.writeText(url).then(() => showToast('Đã sao chép link Cổng Order: ' + url, 'success'));
+  navigator.clipboard.writeText(url).then(() => showToast('Đã sao chép link Cổng Tiếp Nhận Hồ Sơ: ' + url, 'success'));
 }
 
 function orderRenderInbox(containerId = 'orders-inbox-root', isDemo = false) {
@@ -6179,10 +6254,10 @@ function orderRenderInbox(containerId = 'orders-inbox-root', isDemo = false) {
   <div class="space-y-4 animate-fade-in">
     <div class="order-card p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
       <div class="flex items-center gap-3"><div class="w-11 h-11 rounded-2xl crimson-card-header flex items-center justify-center shadow"><i data-lucide="mail-open" class="w-5 h-5"></i></div>
-        <div><div class="font-extrabold text-slate-800">Hộp Order</div><div class="text-[11px] text-slate-500">Order từ các phòng ban gửi tới — kéo thả thẻ để đổi trạng thái</div></div></div>
+        <div><div class="font-extrabold text-slate-800">Hộp Tiếp Nhận Hồ Sơ</div><div class="text-[11px] text-slate-500">Yêu cầu từ các phòng ban gửi tới — kéo thả thẻ để đổi trạng thái</div></div></div>
       <div class="flex flex-wrap items-center gap-2">${scopeToggle}
-        <button onclick="orderCopyPortalLink()" class="order-btn-ghost order-btn-xs"><i data-lucide="link" class="w-3.5 h-3.5"></i>Copy link Cổng Order</button>
-        ${!isDemo ? `<button onclick="location.hash='order'" class="order-btn-primary order-btn-xs"><i data-lucide="external-link" class="w-3.5 h-3.5"></i>Mở Cổng Order</button>` : ''}
+        <button onclick="orderCopyPortalLink()" class="order-btn-ghost order-btn-xs"><i data-lucide="link" class="w-3.5 h-3.5"></i>Copy link Cổng Tiếp Nhận</button>
+        ${!isDemo ? `<button onclick="location.hash='order'" class="order-btn-primary order-btn-xs"><i data-lucide="external-link" class="w-3.5 h-3.5"></i>Mở Cổng Tiếp Nhận</button>` : ''}
       </div>
     </div>
     <div class="grid grid-cols-2 md:grid-cols-5 gap-3">${stats.map(s => `<div class="order-stat bg-gradient-to-br ${s.cls} ${s.pulse ? 'order-pulse' : ''}"><div><div class="text-[10px] uppercase tracking-wider opacity-80 font-semibold">${s.label}</div><div class="text-2xl font-extrabold mt-0.5">${s.val}</div></div><i data-lucide="${s.icon}" class="w-8 h-8 opacity-30"></i></div>`).join('')}</div>
