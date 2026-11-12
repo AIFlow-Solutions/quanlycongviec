@@ -5641,7 +5641,7 @@ function orderPortalLoginHTML() {
         </ul>
       </div>
       <div class="p-6 sm:p-10 flex flex-col justify-center">
-        <div class="flex items-center gap-2 text-brand-700 mb-1"><i data-lucide="shield-check" class="w-5 h-5"></i><span class="text-xs font-bold uppercase tracking-wider">Xác thực Nội bộ VASchools</span></div>
+        <div class="flex items-center gap-2 text-brand-700 mb-1"><i data-lucide="shield-check" class="w-5 h-5"></i><span class="text-xs font-bold uppercase tracking-wider">Xác thực Nội bộ VA Schools</span></div>
         <h3 class="text-xl font-extrabold text-slate-800">Đăng nhập Cổng Order</h3>
         <p class="text-xs text-slate-500 mt-1 mb-6">Đăng nhập nhanh bằng Email trường <code class="text-brand-700 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">@vaschools.edu.vn</code> — không cần nhập OTP.</p>
         <form onsubmit="orderPortalQuickLogin(event)" class="space-y-4">
