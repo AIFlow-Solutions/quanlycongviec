@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WorkFlow Pro - Quản Lý Hồ Sơ & Đầu Mục Công Việc Nhân Viên</title>
+  <title>Hệ Thống Quản Lý Hồ Sơ & Đầu Mục Công Việc Nhân Viên</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
@@ -251,6 +251,13 @@
               <i data-lucide="file-bar-chart-2" class="w-4 h-4"></i>
               <span>Report Tổng quan Tuần</span>
             </button>
+            <button onclick="switchTab('orders')" id="nav-orders" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <div class="flex items-center space-x-3">
+                <i data-lucide="mail-open" class="w-4 h-4"></i>
+                <span>Hộp Order</span>
+              </div>
+              <span id="nav-orders-count" class="hidden bg-rose-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">0</span>
+            </button>
           </div>
 
           <!-- MANAGER-ONLY EXECUTIVE NAVIGATION (Infographic Reports & Employee Journal) -->
@@ -276,6 +283,13 @@
                 <span>Hồ sơ NV & Chấm điểm</span>
               </div>
               <span id="nav-mgr-grading-count" class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded-full font-bold">0</span>
+            </button>
+            <button onclick="switchTab('orders')" id="nav-orders-mgr" class="nav-btn w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition">
+              <div class="flex items-center space-x-3">
+                <i data-lucide="mail-open" class="w-4 h-4"></i>
+                <span>Hộp Order toàn team</span>
+              </div>
+              <span id="nav-orders-mgr-count" class="hidden bg-rose-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">0</span>
             </button>
           </div>
 
@@ -832,6 +846,11 @@
         <!-- ======================================================= -->
         <!-- TAB 6: MANAGER EXECUTIVE INFOGRAPHIC & JOURNAL HUB      -->
         <!-- ======================================================= -->
+        <!-- TAB: HỘP ORDER (Nhân viên xử lý & Quản lý) -->
+        <section id="tab-orders" class="hidden">
+          <div id="orders-inbox-root"></div>
+        </section>
+
         <section id="tab-team" class="hidden space-y-6">
           <!-- Executive Top Control & Filter Bar -->
           <div class="crimson-top-bar text-white p-6 rounded-2xl shadow-md flex flex-wrap items-center justify-between gap-4">
@@ -1638,7 +1657,7 @@
             </button>
           </div>
           <pre id="gas-code-block" class="p-3 rounded-xl bg-slate-900 text-emerald-400 font-mono text-[11px] overflow-x-auto leading-relaxed select-all">/**
- * Google Apps Script Web App - WorkFlow Pro
+ * Google Apps Script Web App - Quản Lý Công Việc & Hồ Sơ
  * Chức năng:
  * 1. Gửi email chứa mã OTP 6 chữ số đến hộp thư người dùng
  * 2. Lưu trữ & Đồng bộ dữ liệu toàn hệ thống (Cloud Database cho Quản lý & Nhân viên)
@@ -1983,7 +2002,14 @@ function loadFromProperties() {
   </nav>
 
   <!-- TOAST NOTIFICATION -->
-  <div id="toast-container" class="fixed bottom-16 lg:bottom-5 right-4 sm:right-5 z-50 space-y-2 pointer-events-none"></div>
+  <!-- CỔNG GỬI ORDER (mở bằng link #order — dành cho mọi phòng ban) -->
+  <div id="order-portal" class="hidden fixed inset-0 z-[90] bg-slate-100 flex-col">
+    <div id="order-portal-root" class="flex flex-col h-full"></div>
+  </div>
+  <!-- DRAWER CHI TIẾT ORDER + TIMELINE -->
+  <div id="order-drawer" class="hidden fixed inset-0 z-[110]"></div>
+
+  <div id="toast-container" class="fixed bottom-16 lg:bottom-5 right-4 sm:right-5 z-[130] space-y-2 pointer-events-none"></div>
 
   <!-- Firebase SDKs (Compat version for clean standalone browser usage) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>

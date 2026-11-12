@@ -1598,7 +1598,7 @@ async function sendOTPToEmailViaWebhook(email, otpCode) {
       body: JSON.stringify({
         email,
         otp: otpCode,
-        appName: 'WorkFlow Pro - Quản Lý Hồ Sơ & Công Việc',
+        appName: 'Hệ Thống Quản Lý Hồ Sơ & Công Việc',
         timestamp: new Date().toLocaleString('vi-VN')
       })
     });
@@ -2111,13 +2111,19 @@ function switchTab(tabId) {
   }
 
   activeTab = tabId;
-  const tabs = ['overview', 'dossiers', 'schedule', 'report', 'journal', 'team'];
+  const tabs = ['overview', 'dossiers', 'schedule', 'report', 'journal', 'team', 'orders'];
   tabs.forEach(t => {
     const sec = document.getElementById(`tab-${t}`);
     const btn = document.getElementById(`nav-${t}`);
     if (sec) sec.classList.toggle('hidden', t !== tabId);
     if (btn) btn.classList.toggle('active', t === tabId);
   });
+  // Nút "Hộp Order" trong menu Quản lý
+  const mgrOrdersBtn = document.getElementById('nav-orders-mgr');
+  if (mgrOrdersBtn) mgrOrdersBtn.classList.toggle('active', tabId === 'orders');
+  if (tabId === 'orders') {
+    ['infographic', 'journal', 'grading'].forEach(s => document.getElementById(`nav-mgr-${s}`)?.classList.remove('active'));
+  }
 
   ensureEmployeeWorkspaceMatched();
   const empName = (currentUser && currentUser.role === 'employee')
@@ -2129,7 +2135,8 @@ function switchTab(tabId) {
     schedule: [`Lịch Phân Việc Theo Ngày/Tuần: ${empName}`, 'Phân bổ đầu mục công việc từ Thứ Hai đến Chủ Nhật'],
     report: [`Report Tổng Quan Tuần: ${empName}`, 'Báo cáo tự động tổng hợp số liệu sau mỗi tuần để chia sẻ cho Quản lý'],
     journal: [`Nhật ký Công việc Hàng ngày: ${empName}`, 'Tự động lưu vết thời gian thực mọi hạng mục khi khởi tạo, cập nhật tiến độ và đánh giá'],
-    team: ['Cổng Giám Sát Cấp Quản Lý', 'Báo cáo Infographic Ngày / Tuần & Nhật ký theo dõi hoạt động nhân viên']
+    team: ['Cổng Giám Sát Cấp Quản Lý', 'Báo cáo Infographic Ngày / Tuần & Nhật ký theo dõi hoạt động nhân viên'],
+    orders: ['📨 Hộp Order — Yêu cầu từ các phòng ban', 'Tiếp nhận, xử lý và cập nhật tiến trình để người gửi theo dõi realtime']
   };
 
   if (document.getElementById('page-title') && titles[tabId]) {
@@ -2142,7 +2149,7 @@ function switchTab(tabId) {
   const sharedBanner = document.getElementById('shared-banner');
   const sharedBannerText = document.getElementById('shared-banner-text');
   if (sharedBanner) {
-    if (isManager(currentUser) && tabId !== 'team') {
+    if (isManager(currentUser) && tabId !== 'team' && tabId !== 'orders') {
       sharedBanner.classList.remove('hidden');
       if (sharedBannerText) {
         sharedBannerText.textContent = `👁️ Quản lý đang soi chi tiết Bàn làm việc của: ${empName}. Bạn có thể xem hồ sơ hoặc chấm điểm trực tiếp.`;
@@ -2159,6 +2166,7 @@ function switchTab(tabId) {
 
   updateMobileBottomNav();
   renderAll();
+  if (tabId === 'orders' && typeof orderRenderInbox === 'function') orderRenderInbox('orders-inbox-root');
 }
 
 function switchManagerSection(secId) {
@@ -5248,3 +5256,1027 @@ function showToast(message, type = 'info') {
     setTimeout(() => toast.remove(), 300);
   }, 3200);
 }
+
+
+// ==========================================
+// 17. ORDER MODULE — CỔNG GỬI ORDER & THEO DÕI TIẾN TRÌNH
+// - Người gửi (bất kỳ ai có Email) mở link  #order  → đăng nhập Email/OTP → gửi Order, chọn nhân viên xử lý
+// - Hệ thống tự ghi nhận (Firestore collection: wf_orders) + người gửi theo dõi realtime
+// - Nhân viên/Quản lý xử lý tại tab "Hộp Order" (Kanban kéo-thả / Bảng), tự tạo Hồ sơ trong bảng phân việc
+// - Chạy thử không đụng dữ liệu thật:  ?demo=1#order
+// ==========================================
+const ORDER_KEYS = {
+  USER: 'wf_pro_order_user_v1',
+  LOCAL: 'wf_pro_orders_local_v1'
+};
+const ORDER_COLLECTION = 'wf_orders';
+const ORDER_DEMO_MODE = new URLSearchParams(window.location.search).has('demo');
+
+const ORDER_DEPARTMENTS = ['P. Công nghệ', 'P. CSVC', 'P. Đầu tư', 'P. HCNS', 'P. Kế toán', 'P. Kinh doanh', 'P. Vận hành', 'VP TCT', 'HĐHT KPT', 'HĐHT MN', 'HĐTA', 'BGH cơ sở'];
+const ORDER_DOC_TYPES = ['Tờ trình', 'Đề xuất / Kế hoạch', 'Hợp đồng', 'Phụ lục hợp đồng', 'Thanh toán / Tạm ứng', 'Công văn', 'Quyết định', 'Báo cáo', 'Giấy tờ pháp lý', 'Khác'];
+
+const ORDER_STATUSES = {
+  pending:  { label: 'Chờ tiếp nhận',          short: 'Chờ tiếp nhận', icon: 'hourglass',      color: 'slate',   step: 0, progress: 10 },
+  received: { label: 'Đã tiếp nhận',           short: 'Đã tiếp nhận',  icon: 'inbox',          color: 'blue',    step: 1, progress: 40 },
+  reviewed: { label: 'Đã duyệt nội dung',      short: 'Duyệt nội dung', icon: 'file-check-2',  color: 'violet',  step: 2, progress: 75 },
+  revise:   { label: 'Cần điều chỉnh, bổ sung', short: 'Cần bổ sung',  icon: 'alert-triangle', color: 'amber',   step: 2, progress: 50 },
+  done:     { label: 'Đã duyệt – Hoàn tất',    short: 'Hoàn tất',      icon: 'badge-check',    color: 'emerald', step: 3, progress: 100 },
+  rejected: { label: 'Từ chối / Đã hủy',       short: 'Từ chối',       icon: 'x-circle',       color: 'rose',    step: -1, progress: 0 }
+};
+const ORDER_STEPPER = ['pending', 'received', 'reviewed', 'done'];
+const ORDER_KANBAN_COLS = ['pending', 'received', 'reviewed', 'revise', 'done'];
+const ORDER_PRIORITY = {
+  low:    { label: 'Thấp',       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  medium: { label: 'Trung bình', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  high:   { label: 'Khẩn',       cls: 'bg-rose-50 text-rose-700 border-rose-200' }
+};
+
+let orderList = [];
+let orderUnsub = null;
+let orderUseLocal = ORDER_DEMO_MODE;
+let orderSeenIds = null;            // Set các order đã thấy (để báo order mới)
+let orderStaffCache = [];
+let orderPortalUser = null;          // { email, name }
+let orderPortalTab = 'new';          // 'new' | 'mine'
+let orderPortalView = 'sender';      // 'sender' | 'handler' (chỉ dùng ở chế độ demo)
+let orderInboxView = 'kanban';       // 'kanban' | 'table'
+let orderEditingId = null;           // Khi người gửi bổ sung lại Order
+let orderPortalOtp = { email: '', name: '', code: '' };
+let orderFilters = { q: '', type: '', dept: '', status: '' };
+let orderInboxFilters = { q: '', status: '', scope: 'mine' };
+let orderDragId = null;
+
+// ---------- Helpers ----------
+function orderNowISO() { return new Date().toISOString(); }
+function orderTodayStr(offsetDays = 0) {
+  const d = new Date(); d.setDate(d.getDate() + offsetDays); return toISODateString(d);
+}
+function orderStatusMeta(s) { return ORDER_STATUSES[s] || ORDER_STATUSES.pending; }
+function orderBadge(status, size = 'sm') {
+  const m = orderStatusMeta(status);
+  const pad = size === 'lg' ? 'px-3 py-1 text-xs' : 'px-2.5 py-0.5 text-[11px]';
+  return `<span class="order-badge order-badge-${m.color} inline-flex items-center gap-1 ${pad} rounded-full font-semibold whitespace-nowrap"><i data-lucide="${m.icon}" class="w-3 h-3"></i>${m.label}</span>`;
+}
+function orderPriorityChip(p) {
+  const m = ORDER_PRIORITY[p] || ORDER_PRIORITY.medium;
+  return `<span class="inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-bold ${m.cls}">${m.label}</span>`;
+}
+function orderFormatMoney(v) {
+  const n = Number(String(v || '').replace(/[^\d]/g, '')) || 0;
+  return n.toLocaleString('vi-VN');
+}
+function orderExtractLinks(text) {
+  if (!text) return [];
+  return (String(text).match(/https?:\/\/[^\s<>"']+/g) || []).slice(0, 10);
+}
+function orderLinkIcon(url) {
+  if (/docs\.google\.com\/spreadsheets/.test(url)) return 'sheet';
+  if (/docs\.google\.com\/document/.test(url)) return 'file-text';
+  if (/drive\.google\.com/.test(url)) return 'hard-drive';
+  return 'link';
+}
+function orderDeadlineInfo(o) {
+  if (!o || !o.deadline || o.status === 'done' || o.status === 'rejected') return null;
+  const dl = parseDeadlineDate(o.deadline);
+  if (!dl) return null;
+  const diffH = (dl.getTime() - Date.now()) / 36e5;
+  if (diffH < 0) return { text: 'Quá hạn', cls: 'text-rose-600 bg-rose-50 border-rose-200' };
+  if (diffH <= 24) return { text: 'Sắp đến hạn', cls: 'text-amber-700 bg-amber-50 border-amber-200' };
+  return null;
+}
+function orderGenerateCode() {
+  const d = new Date();
+  const ymd = String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  const rnd = Math.random().toString(36).slice(2, 5).toUpperCase();
+  return `ORD-${ymd}-${rnd}`;
+}
+function orderInitials(nameOrEmail) {
+  const s = String(nameOrEmail || '?').replace(/\(.*\)/, '').trim();
+  const parts = s.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[parts.length - 2][0] + parts[parts.length - 1][0]).toUpperCase();
+  return s.slice(0, 2).toUpperCase();
+}
+function orderStaffName(email) {
+  const st = orderStaffCache.find(s => s.email === (email || '').toLowerCase());
+  return st ? st.name : (email || 'Chưa chọn');
+}
+function orderIcons() { try { lucide.createIcons(); } catch (e) { /* noop */ } }
+
+// ---------- Data layer (Firestore + Local fallback) ----------
+function orderLoadLocal() {
+  try { return JSON.parse(localStorage.getItem(ORDER_KEYS.LOCAL) || '[]'); } catch (e) { return []; }
+}
+function orderSaveLocal(list) { localStorage.setItem(ORDER_KEYS.LOCAL, JSON.stringify(list)); }
+
+function orderSwitchToLocal(reason) {
+  if (orderUseLocal) return;
+  orderUseLocal = true;
+  console.warn('Order module → Local mode:', reason);
+  showToast('⚠️ Chưa có quyền ghi Firestore cho Order — tạm lưu trên máy này. Cần cập nhật Firestore Rules.', 'error');
+  orderList = orderLoadLocal();
+  orderRerender();
+}
+
+function orderSubscribe(mode) {
+  // mode: 'sender' (chỉ order của mình) | 'handler' (toàn bộ, lọc phía client)
+  if (orderUnsub) { orderUnsub(); orderUnsub = null; }
+  if (orderUseLocal || !fbDb) {
+    orderUseLocal = true;
+    orderList = orderLoadLocal();
+    orderRerender();
+    return;
+  }
+  let ref = fbDb.collection(ORDER_COLLECTION);
+  if (mode === 'sender' && orderPortalUser) ref = ref.where('senderEmail', '==', orderPortalUser.email);
+  orderUnsub = ref.onSnapshot(snap => {
+    const arr = [];
+    snap.forEach(doc => arr.push({ ...doc.data(), id: doc.id }));
+    arr.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    orderDetectNew(arr);
+    orderList = arr;
+    orderRerender();
+  }, err => orderSwitchToLocal(err && err.message));
+}
+
+async function orderPersist(order) {
+  order.updatedAt = orderNowISO();
+  const idx = orderList.findIndex(o => o.id === order.id);
+  if (idx > -1) orderList[idx] = order; else orderList.unshift(order);
+  if (orderUseLocal || !fbDb) {
+    const all = orderLoadLocal();
+    const j = all.findIndex(o => o.id === order.id);
+    if (j > -1) all[j] = order; else all.unshift(order);
+    orderSaveLocal(all);
+    orderRerender();
+    return true;
+  }
+  try {
+    await fbDb.collection(ORDER_COLLECTION).doc(order.id).set(JSON.parse(JSON.stringify(order)), { merge: true });
+    return true;
+  } catch (err) {
+    orderSwitchToLocal(err && err.message);
+    const all = orderLoadLocal();
+    const j = all.findIndex(o => o.id === order.id);
+    if (j > -1) all[j] = order; else all.unshift(order);
+    orderSaveLocal(all);
+    orderRerender();
+    return true;
+  }
+}
+
+function orderDetectNew(arr) {
+  const me = (currentUser && currentUser.email || '').toLowerCase();
+  if (!orderSeenIds) { orderSeenIds = new Set(arr.map(o => o.id)); return; }
+  arr.forEach(o => {
+    if (!orderSeenIds.has(o.id)) {
+      orderSeenIds.add(o.id);
+      const forMe = o.assigneeEmail === me || (isManager(currentUser) && !orderPortalUser);
+      if (forMe && o.status === 'pending' && !document.getElementById('order-portal')?.classList.contains('flex')) {
+        showToast(`📨 Order mới ${o.code} từ ${o.senderName} (${o.department})`, 'success');
+      }
+    }
+  });
+}
+
+async function orderLoadStaff() {
+  let wl = [];
+  try {
+    if (!orderUseLocal && fbDb) {
+      const doc = await fbDb.collection('wf_system').doc('global_state').get();
+      if (doc.exists && Array.isArray(doc.data().whitelist)) wl = doc.data().whitelist;
+    }
+  } catch (e) { console.warn('Order staff load warning:', e); }
+  if (!wl.length) wl = getWhitelist();
+  if (ORDER_DEMO_MODE && wl.length < 6) {
+    wl = wl.concat([
+      { email: 'lan.nguyen@demo.vn', name: 'Nguyễn Thị Lan', role: 'employee' },
+      { email: 'minh.tran@demo.vn', name: 'Trần Quang Minh', role: 'employee' },
+      { email: 'huong.le@demo.vn', name: 'Lê Thu Hương', role: 'mod' }
+    ]);
+  }
+  const seen = new Set();
+  orderStaffCache = wl
+    .filter(w => w && w.email)
+    .map(w => ({
+      email: w.email.trim().toLowerCase(),
+      name: String(w.name || w.email).replace(/^(Nhân viên|Quản lý \/ Mod|Super Admin)\s*\((.+)\)$/, '$2'),
+      role: w.role || 'employee'
+    }))
+    .filter(w => !seen.has(w.email) && seen.add(w.email));
+  return orderStaffCache;
+}
+
+function orderSeedDemo(senderEmail, senderName) {
+  if (orderLoadLocal().length) return;
+  const staff = orderStaffCache.length ? orderStaffCache : [{ email: 'lan.nguyen@demo.vn', name: 'Nguyễn Thị Lan' }];
+  const pick = i => staff[i % staff.length];
+  const mk = (i, status, docType, dept, content, dDeadline, priority, extraHistory) => {
+    const created = new Date(Date.now() - (6 - i) * 864e5 - 3 * 36e5).toISOString();
+    const a = pick(i);
+    const history = [{ status: 'pending', by: senderName, byEmail: senderEmail, at: created, note: 'Gửi Order mới' }].concat(extraHistory(created, a));
+    return {
+      id: 'ord_demo_' + i, code: `ORD-DEMO-${String(i + 1).padStart(3, '0')}`,
+      senderName, senderEmail, department: dept,
+      docType, priority, cost: [0, 15000000, 120000000, 0, 4500000, 0][i] || 0,
+      sentDate: created.slice(0, 10), deadline: orderTodayStr(dDeadline), content,
+      note: i % 2 === 0 ? 'Tài liệu: https://drive.google.com/drive/folders/demo-folder' : '',
+      assigneeEmail: a.email, assigneeName: a.name, status, history,
+      createdAt: created, updatedAt: history[history.length - 1].at
+    };
+  };
+  const h = (offsetH, status, note) => (created, a) => ({ status, by: a.name, byEmail: a.email, at: new Date(new Date(created).getTime() + offsetH * 36e5).toISOString(), note });
+  const demo = [
+    mk(0, 'done', 'Hợp đồng', 'P. Kinh doanh', 'Rà soát hợp đồng hợp tác tuyển sinh với đối tác ABC năm học 2026-2027', -1, 'high',
+      (c, a) => [h(2, 'received', 'Đã nhận hồ sơ')(c, a), h(20, 'reviewed', 'Đã duyệt nội dung hợp lệ')(c, a), h(48, 'done', 'Đã hoàn tất xử lý hồ sơ')(c, a)]),
+    mk(1, 'reviewed', 'Thanh toán / Tạm ứng', 'P. CSVC', 'Đề nghị thanh toán đợt 2 sửa chữa phòng học khu B', 2, 'medium',
+      (c, a) => [h(1, 'received', '')(c, a), h(10, 'reviewed', 'Đã duyệt nội dung, đủ chứng từ')(c, a)]),
+    mk(2, 'revise', 'Tờ trình', 'P. Đầu tư', 'Tờ trình phê duyệt chủ trương đầu tư cơ sở mới tại Thủ Đức', 1, 'high',
+      (c, a) => [h(3, 'received', '')(c, a), h(8, 'revise', 'Bổ sung bảng dự toán chi tiết & ý kiến P. Kế toán')(c, a)]),
+    mk(3, 'received', 'Công văn', 'P. HCNS', 'Công văn gửi Sở GD&ĐT về kế hoạch tổ chức ngày hội việc làm', 3, 'low',
+      (c, a) => [h(4, 'received', 'Sẽ xử lý trong hôm nay')(c, a)]),
+    mk(4, 'pending', 'Đề xuất / Kế hoạch', 'P. Công nghệ', 'Đề xuất mua bản quyền phần mềm quản lý thư viện', 4, 'medium', () => []),
+    mk(5, 'pending', 'Giấy tờ pháp lý', 'BGH cơ sở', 'Xin cung cấp bản sao Giấy phép hoạt động giáo dục (công chứng)', 0, 'high', () => [])
+  ];
+  orderSaveLocal(demo);
+}
+
+// ---------- Portal (Người gửi) ----------
+function orderOpenPortal() {
+  const portal = document.getElementById('order-portal');
+  if (!portal) return;
+  portal.classList.remove('hidden'); portal.classList.add('flex');
+  document.body.style.overflow = 'hidden';
+  // Dùng lại phiên đăng nhập chính nếu có
+  const saved = localStorage.getItem(ORDER_KEYS.USER);
+  if (saved) { try { orderPortalUser = JSON.parse(saved); } catch (e) { orderPortalUser = null; } }
+  if (!orderPortalUser && isUserAuthenticatedSession()) {
+    orderPortalUser = { email: currentUser.email, name: String(currentUser.name || currentUser.email).replace(/\s*\(.+\)$/, '') };
+  }
+  orderLoadStaff().then(() => {
+    if (orderPortalUser) orderAfterPortalLogin(); else orderRenderPortal();
+  });
+  orderRenderPortal();
+}
+
+function orderClosePortal() {
+  const portal = document.getElementById('order-portal');
+  if (portal) { portal.classList.add('hidden'); portal.classList.remove('flex'); }
+  document.body.style.overflow = '';
+  if (location.hash === '#order') history.replaceState(null, '', location.pathname + location.search);
+  if (isUserAuthenticatedSession()) orderSubscribe('handler');
+}
+
+function orderAfterPortalLogin() {
+  localStorage.setItem(ORDER_KEYS.USER, JSON.stringify(orderPortalUser));
+  if (ORDER_DEMO_MODE) orderSeedDemo(orderPortalUser.email, orderPortalUser.name);
+  orderSubscribe(orderPortalView === 'handler' ? 'handler' : 'sender');
+  orderRenderPortal();
+}
+
+function orderPortalLogout() {
+  if (orderUnsub) { orderUnsub(); orderUnsub = null; }
+  localStorage.removeItem(ORDER_KEYS.USER);
+  orderPortalUser = null; orderList = []; orderPortalOtp = { email: '', name: '', code: '' };
+  orderRenderPortal();
+}
+
+function orderIsValidSenderEmail(email) {
+  if (!email || !email.includes('@')) return false;
+  const clean = email.trim().toLowerCase();
+  // Ở chế độ demo hoặc tài khoản đặc biệt cho phép test
+  if (ORDER_DEMO_MODE || clean.includes('demo') || clean.includes('test')) return true;
+  // Bắt buộc email nội bộ trường VASchools
+  return clean.endsWith('@vaschools.edu.vn');
+}
+
+async function orderPortalQuickLogin(e) {
+  e.preventDefault();
+  const email = document.getElementById('op-login-email').value.trim().toLowerCase();
+  const name = document.getElementById('op-login-name').value.trim();
+  if (!email || !email.includes('@')) {
+    showToast('Vui lòng nhập địa chỉ Email hợp lệ!', 'error');
+    return;
+  }
+  if (!name) {
+    showToast('Vui lòng nhập Họ và tên của bạn!', 'error');
+    return;
+  }
+  if (!orderIsValidSenderEmail(email)) {
+    showToast('Cổng Order chỉ áp dụng cho Email nội bộ trường (@vaschools.edu.vn)!', 'error');
+    return;
+  }
+  orderPortalUser = { email, name };
+  showToast(`Xin chào ${orderPortalUser.name}! Bạn có thể gửi Order ngay.`, 'success');
+  orderAfterPortalLogin();
+}
+
+function orderSetPortalTab(t) { orderPortalTab = t; if (t === 'new') orderEditingId = null; orderRenderPortal(); }
+function orderSetPortalView(v) {
+  orderPortalView = v;
+  orderSubscribe(v === 'handler' ? 'handler' : 'sender');
+  orderRenderPortal();
+}
+
+function orderRenderPortal() {
+  const root = document.getElementById('order-portal-root');
+  if (!root) return;
+  const u = orderPortalUser;
+  const header = `
+    <header class="crimson-top-bar order-portal-header text-white px-4 sm:px-8 py-3.5 flex items-center justify-between gap-3 shadow-lg">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-10 h-10 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0 backdrop-blur"><i data-lucide="send" class="w-5 h-5"></i></div>
+        <div class="min-w-0">
+          <h1 class="font-extrabold tracking-wide text-sm sm:text-lg leading-tight truncate">CỔNG GỬI ORDER & THEO DÕI HỒ SƠ</h1>
+          <p class="text-[11px] text-rose-100/90 truncate">Gửi yêu cầu hồ sơ – hệ thống tự ghi nhận – theo dõi tiến trình realtime</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        ${u ? `<div class="hidden sm:flex flex-col items-end leading-tight mr-1"><span class="text-[11px] text-rose-100">Xin chào</span><span class="text-xs font-bold">${escapeHtml(u.email)}</span></div>
+        <div class="w-9 h-9 rounded-full bg-white text-brand-700 font-extrabold text-xs flex items-center justify-center shadow">${escapeHtml(orderInitials(u.name || u.email))}</div>
+        <button onclick="orderPortalLogout()" title="Đăng xuất" class="p-2 rounded-xl bg-white/10 hover:bg-white/25 border border-white/20 transition"><i data-lucide="log-out" class="w-4 h-4"></i></button>` : ''}
+        ${isUserAuthenticatedSession() ? `<button onclick="orderClosePortal()" class="px-3 py-2 rounded-xl bg-white text-brand-700 text-xs font-bold hover:bg-rose-50 transition">Về Bàn làm việc</button>` : ''}
+      </div>
+    </header>`;
+  const demoBar = ORDER_DEMO_MODE ? `
+    <div class="bg-amber-50 border-b border-amber-200 px-4 sm:px-8 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <span class="text-amber-800 font-semibold flex items-center gap-1.5"><i data-lucide="flask-conical" class="w-4 h-4"></i>CHẾ ĐỘ DEMO — dữ liệu mẫu chỉ lưu trên máy này, không ảnh hưởng hệ thống thật.</span>
+      ${u ? `<div class="inline-flex bg-white rounded-xl p-1 border border-amber-200 shadow-sm">
+        <button onclick="orderSetPortalView('sender')" class="px-3 py-1 rounded-lg font-bold ${orderPortalView === 'sender' ? 'bg-brand-600 text-white' : 'text-slate-600'}">👤 Góc nhìn Người gửi</button>
+        <button onclick="orderSetPortalView('handler')" class="px-3 py-1 rounded-lg font-bold ${orderPortalView === 'handler' ? 'bg-brand-600 text-white' : 'text-slate-600'}">🧑‍💼 Góc nhìn Người xử lý</button>
+      </div>` : ''}
+      <button onclick="if(confirm('Xóa toàn bộ dữ liệu demo và tạo lại?')){localStorage.removeItem('${ORDER_KEYS.LOCAL}');orderSeedDemo(orderPortalUser?orderPortalUser.email:'demo@demo.vn',orderPortalUser?orderPortalUser.name:'Demo');orderList=orderLoadLocal();orderRerender();}" class="text-amber-700 underline font-semibold">Làm mới dữ liệu demo</button>
+    </div>` : '';
+
+  let body = '';
+  if (!u) body = orderPortalLoginHTML();
+  else if (ORDER_DEMO_MODE && orderPortalView === 'handler') body = `<div class="max-w-[1400px] mx-auto w-full p-4 sm:p-6"><div id="order-portal-inbox"></div></div>`;
+  else body = orderPortalMainHTML();
+
+  root.innerHTML = header + demoBar + `<div class="flex-1 overflow-y-auto order-portal-bg">${body}</div>`;
+  if (u && ORDER_DEMO_MODE && orderPortalView === 'handler') orderRenderInbox('order-portal-inbox', true);
+  orderIcons();
+}
+
+function orderPortalLoginHTML() {
+  return `
+  <div class="min-h-full flex items-center justify-center p-4 sm:p-8">
+    <div class="w-full max-w-4xl grid md:grid-cols-2 bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 animate-fade-in">
+      <div class="crimson-card-header p-8 hidden md:flex flex-col justify-between relative overflow-hidden">
+        <div class="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-white/10"></div>
+        <div class="absolute -left-10 bottom-10 w-40 h-40 rounded-full bg-white/5"></div>
+        <div class="relative">
+          <span class="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white/15 border border-white/20 rounded-full px-3 py-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i>Dành cho tất cả phòng ban</span>
+          <h2 class="text-2xl font-extrabold mt-5 leading-snug">Gửi hồ sơ trình ký<br/>chỉ trong 1 phút</h2>
+          <p class="text-rose-100 text-sm mt-3">Hệ thống tự cấp mã, ghi nhận thời gian và cho bạn theo dõi tiến trình từng bước cho đến khi hoàn tất.</p>
+        </div>
+        <ul class="relative space-y-3 text-sm mt-8">
+          <li class="flex items-center gap-3"><span class="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center"><i data-lucide="file-plus-2" class="w-4 h-4"></i></span>Điền form & chọn người xử lý</li>
+          <li class="flex items-center gap-3"><span class="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center"><i data-lucide="bell-ring" class="w-4 h-4"></i></span>Người xử lý nhận thông báo tức thì</li>
+          <li class="flex items-center gap-3"><span class="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center"><i data-lucide="git-commit-horizontal" class="w-4 h-4"></i></span>Theo dõi timeline realtime</li>
+        </ul>
+      </div>
+      <div class="p-6 sm:p-10 flex flex-col justify-center">
+        <div class="flex items-center gap-2 text-brand-700 mb-1"><i data-lucide="shield-check" class="w-5 h-5"></i><span class="text-xs font-bold uppercase tracking-wider">Xác thực Nội bộ VASchools</span></div>
+        <h3 class="text-xl font-extrabold text-slate-800">Đăng nhập Cổng Order</h3>
+        <p class="text-xs text-slate-500 mt-1 mb-6">Đăng nhập nhanh bằng Email trường <code class="text-brand-700 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">@vaschools.edu.vn</code> — không cần nhập OTP.</p>
+        <form onsubmit="orderPortalQuickLogin(event)" class="space-y-4">
+          <div>
+            <label class="order-label">Họ và tên người gửi <span class="text-rose-500">*</span></label>
+            <div class="relative">
+              <i data-lucide="user" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+              <input id="op-login-name" required class="order-input pl-9" placeholder="Ví dụ: Nguyễn Văn An" />
+            </div>
+          </div>
+          <div>
+            <label class="order-label">Email trường <span class="text-rose-500">*</span></label>
+            <div class="relative">
+              <i data-lucide="mail" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+              <input id="op-login-email" type="email" required class="order-input pl-9" placeholder="an.nguyen@vaschools.edu.vn" />
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1">Dùng email này để xem danh sách & theo dõi tiến trình hồ sơ của bạn.</p>
+          </div>
+          <button id="op-login-btn" class="order-btn-primary w-full justify-center text-sm py-3 mt-2 shadow-md">
+            <i data-lucide="log-in" class="w-4 h-4"></i>Vào Cổng Gửi Order
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>`;
+}
+
+function orderMyOrders() {
+  const me = orderPortalUser ? orderPortalUser.email : '';
+  return orderList.filter(o => o.senderEmail === me);
+}
+
+function orderPortalMainHTML() {
+  const mine = orderMyOrders();
+  const cnt = s => mine.filter(o => s.includes(o.status)).length;
+  const stats = [
+    { label: 'Tổng đã gửi', val: mine.length, icon: 'send', cls: 'from-slate-700 to-slate-900' },
+    { label: 'Đang xử lý', val: cnt(['pending', 'received', 'reviewed']), icon: 'loader', cls: 'from-blue-500 to-indigo-600' },
+    { label: 'Cần bổ sung', val: cnt(['revise']), icon: 'alert-triangle', cls: 'from-amber-400 to-orange-500' },
+    { label: 'Hoàn tất', val: cnt(['done']), icon: 'badge-check', cls: 'from-emerald-500 to-teal-600' }
+  ];
+  return `
+  <div class="max-w-6xl mx-auto w-full p-4 sm:p-6 space-y-5 pb-16">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      ${stats.map(s => `<div class="order-stat bg-gradient-to-br ${s.cls}"><div><div class="text-[11px] uppercase tracking-wider opacity-80 font-semibold">${s.label}</div><div class="text-3xl font-extrabold mt-1">${s.val}</div></div><i data-lucide="${s.icon}" class="w-9 h-9 opacity-30"></i></div>`).join('')}
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="inline-flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-200">
+        <button onclick="orderSetPortalTab('new')" class="order-tab ${orderPortalTab === 'new' ? 'active' : ''}"><i data-lucide="file-plus-2" class="w-4 h-4"></i>${orderEditingId ? 'Bổ sung Order' : 'Gửi Order mới'}</button>
+        <button onclick="orderSetPortalTab('mine')" class="order-tab ${orderPortalTab === 'mine' ? 'active' : ''}"><i data-lucide="list-checks" class="w-4 h-4"></i>Order của tôi <span class="ml-1 px-1.5 rounded-full bg-black/10 text-[10px]">${mine.length}</span></button>
+      </div>
+      <span class="text-[11px] text-slate-500 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full ${orderUseLocal ? 'bg-amber-400' : 'bg-emerald-500 animate-pulse'}"></span>${orderUseLocal ? 'Lưu trên máy (offline/demo)' : 'Đồng bộ realtime Firebase'}</span>
+    </div>
+    <div id="order-portal-content">${orderPortalTab === 'new' ? orderFormHTML() : orderMyListHTML()}</div>
+  </div>`;
+}
+
+function orderOptions(list, selected, placeholder) {
+  return `<option value="">${placeholder}</option>` + list.map(v => `<option ${v === selected ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+}
+
+function orderFormHTML() {
+  const o = orderEditingId ? (orderList.find(x => x.id === orderEditingId) || {}) : {};
+  const u = orderPortalUser || {};
+  const staffOpts = `<option value="">-- Chọn nhân viên xử lý --</option>` + orderStaffCache.map(s =>
+    `<option value="${escapeHtml(s.email)}" ${s.email === o.assigneeEmail ? 'selected' : ''}>${escapeHtml(s.name)}${s.name.includes('@') ? '' : ' — ' + escapeHtml(s.email)}</option>`).join('');
+  const pr = o.priority || 'medium';
+  return `
+  <form id="order-form" onsubmit="orderSubmit(event)" class="space-y-4 animate-fade-in">
+    ${orderEditingId ? `<div class="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-sm text-amber-900 flex gap-3"><i data-lucide="alert-triangle" class="w-5 h-5 shrink-0"></i><div><b>Đang bổ sung Order ${escapeHtml(o.code)}</b><br/><span class="text-xs">Yêu cầu từ người xử lý: “${escapeHtml(((o.history || []).filter(h => h.status === 'revise').pop() || {}).note || '')}”</span></div></div>` : ''}
+    <div class="order-card">
+      <div class="order-card-title"><span class="order-step-dot">1</span>Thông tin người gửi</div>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div><label class="order-label">Tên người gửi <span class="text-rose-500">*</span></label><input id="of-name" required class="order-input" value="${escapeHtml(o.senderName || u.name || '')}" placeholder="Nhập họ và tên..." /></div>
+        <div><label class="order-label">Email</label><input class="order-input bg-slate-50 text-slate-500" value="${escapeHtml(u.email || '')}" disabled /></div>
+        <div class="sm:col-span-2"><label class="order-label">Đơn vị gửi hồ sơ <span class="text-rose-500">*</span></label><select id="of-dept" required class="order-input">${orderOptions(ORDER_DEPARTMENTS, o.department, '-- Chọn đơn vị --')}</select></div>
+      </div>
+    </div>
+    <div class="order-card">
+      <div class="order-card-title"><span class="order-step-dot">2</span>Thông tin hồ sơ & người xử lý</div>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div><label class="order-label">Loại hồ sơ <span class="text-rose-500">*</span></label><select id="of-type" required class="order-input">${orderOptions(ORDER_DOC_TYPES, o.docType, '-- Chọn loại hồ sơ --')}</select></div>
+        <div><label class="order-label">Nhân viên xử lý <span class="text-rose-500">*</span></label><select id="of-assignee" required class="order-input">${staffOpts}</select></div>
+        <div><label class="order-label">Chi phí dự kiến (VND)</label><div class="relative"><input id="of-cost" inputmode="numeric" class="order-input pr-12" value="${orderFormatMoney(o.cost || 0)}" oninput="this.value=orderFormatMoney(this.value)" /><span class="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">VND</span></div></div>
+        <div><label class="order-label">Mức độ ưu tiên</label>
+          <div class="flex gap-2">${Object.entries(ORDER_PRIORITY).map(([k, m]) => `
+            <label class="order-chip ${k === pr ? 'active' : ''}" onclick="document.querySelectorAll('#order-form .order-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">
+              <input type="radio" name="of-priority" value="${k}" ${k === pr ? 'checked' : ''} class="hidden" />${k === 'high' ? '🔴' : k === 'medium' ? '🔵' : '🟢'} ${m.label}</label>`).join('')}
+          </div></div>
+      </div>
+    </div>
+    <div class="order-card">
+      <div class="order-card-title"><span class="order-step-dot">3</span>Thời hạn & nội dung</div>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div><label class="order-label">Ngày gửi hồ sơ <span class="text-rose-500">*</span></label><input id="of-sent" type="date" required class="order-input" value="${o.sentDate || orderTodayStr()}" /></div>
+        <div><label class="order-label">Hạn cuối cần trả hồ sơ <span class="text-rose-500">*</span></label><input id="of-deadline" type="date" required class="order-input" min="${orderTodayStr()}" value="${o.deadline || orderTodayStr(3)}" /></div>
+        <div class="sm:col-span-2"><label class="order-label">Nội dung hồ sơ <span class="text-rose-500">*</span></label><textarea id="of-content" required rows="3" class="order-input" placeholder="Mô tả tóm tắt nội dung trình ký...">${escapeHtml(o.content || '')}</textarea></div>
+        <div class="sm:col-span-2"><label class="order-label">Ghi chú <span class="text-brand-600 font-normal">(dán link tờ trình / đề xuất / kế hoạch — link sẽ bấm được ở phần chi tiết)</span></label><textarea id="of-note" rows="2" class="order-input" placeholder="https://drive.google.com/...">${escapeHtml(o.note || '')}</textarea></div>
+      </div>
+    </div>
+    <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+      ${orderEditingId ? `<button type="button" onclick="orderSetPortalTab('mine')" class="order-btn-ghost justify-center">Hủy</button>` : `<button type="reset" class="order-btn-ghost justify-center"><i data-lucide="rotate-ccw" class="w-4 h-4"></i>Nhập lại</button>`}
+      <button id="order-submit-btn" class="order-btn-primary justify-center"><i data-lucide="send" class="w-4 h-4"></i>${orderEditingId ? 'Gửi lại bản bổ sung' : 'Gửi Order'}</button>
+    </div>
+  </form>`;
+}
+
+async function orderSubmit(e) {
+  e.preventDefault();
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const assigneeEmail = v('of-assignee');
+  const staff = orderStaffCache.find(s => s.email === assigneeEmail);
+  const data = {
+    senderName: v('of-name'), department: v('of-dept'), docType: v('of-type'),
+    assigneeEmail, assigneeName: staff ? staff.name : assigneeEmail,
+    cost: Number(v('of-cost').replace(/[^\d]/g, '')) || 0,
+    priority: (document.querySelector('input[name="of-priority"]:checked') || {}).value || 'medium',
+    sentDate: v('of-sent'), deadline: v('of-deadline'), content: v('of-content'), note: v('of-note')
+  };
+  if (data.deadline < data.sentDate) { showToast('Hạn cuối phải sau ngày gửi hồ sơ!', 'error'); return; }
+  const btn = document.getElementById('order-submit-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="order-spinner"></span> Đang gửi...'; }
+  const u = orderPortalUser;
+  let order;
+  if (orderEditingId) {
+    order = { ...orderList.find(o => o.id === orderEditingId), ...data };
+    order.status = 'received';
+    order.history = (order.history || []).concat([{ status: 'received', by: data.senderName, byEmail: u.email, at: orderNowISO(), note: 'Người gửi đã bổ sung & gửi lại hồ sơ' }]);
+  } else {
+    const code = orderGenerateCode();
+    order = {
+      id: code, code, ...data, senderEmail: u.email, status: 'pending',
+      history: [{ status: 'pending', by: data.senderName, byEmail: u.email, at: orderNowISO(), note: 'Gửi Order mới' }],
+      createdAt: orderNowISO(), linkedTaskId: null
+    };
+  }
+  await orderPersist(order);
+  const wasEdit = !!orderEditingId;
+  orderEditingId = null;
+  orderShowSuccess(order, wasEdit);
+}
+
+function orderShowSuccess(order, wasEdit) {
+  const box = document.getElementById('order-portal-content');
+  if (!box) return;
+  const trackUrl = `${location.origin}${location.pathname}${location.search}#order`;
+  box.innerHTML = `
+  <div class="order-card text-center py-10 animate-fade-in">
+    <div class="order-success-check mx-auto"><i data-lucide="check" class="w-10 h-10"></i></div>
+    <h3 class="text-xl font-extrabold text-slate-800 mt-5">${wasEdit ? 'Đã gửi lại bản bổ sung!' : 'Gửi Order thành công!'}</h3>
+    <p class="text-sm text-slate-500 mt-1">Hệ thống đã ghi nhận lúc ${formatVNDateTime(order.updatedAt)} và thông báo tới <b>${escapeHtml(order.assigneeName)}</b>.</p>
+    <div class="inline-flex items-center gap-2 mt-5 px-5 py-3 rounded-2xl bg-brand-50 border border-brand-200">
+      <span class="text-xs text-slate-500">Mã Order</span><span class="text-lg font-extrabold text-brand-700 tracking-wider">${escapeHtml(order.code)}</span>
+      <button onclick="navigator.clipboard.writeText('${order.code}');showToast('Đã sao chép mã Order','success')" class="p-1.5 rounded-lg hover:bg-brand-100 text-brand-700"><i data-lucide="copy" class="w-4 h-4"></i></button>
+    </div>
+    <div class="flex flex-wrap justify-center gap-2 mt-6">
+      <button onclick="orderSetPortalTab('mine');setTimeout(()=>orderOpenDrawer('${order.id}','sender'),60)" class="order-btn-primary"><i data-lucide="activity" class="w-4 h-4"></i>Theo dõi tiến trình</button>
+      <button onclick="navigator.clipboard.writeText('${trackUrl}');showToast('Đã sao chép link theo dõi','success')" class="order-btn-ghost"><i data-lucide="link" class="w-4 h-4"></i>Sao chép link theo dõi</button>
+      <button onclick="orderSetPortalTab('new')" class="order-btn-ghost"><i data-lucide="plus" class="w-4 h-4"></i>Gửi Order khác</button>
+    </div>
+  </div>`;
+  orderIcons();
+}
+
+function orderApplyFilters(list, f) {
+  const q = (f.q || '').toLowerCase();
+  return list.filter(o =>
+    (!q || [o.code, o.content, o.senderName, o.assigneeName, o.department].join(' ').toLowerCase().includes(q)) &&
+    (!f.type || o.docType === f.type) && (!f.dept || o.department === f.dept) && (!f.status || o.status === f.status));
+}
+function orderSetFilter(key, val) {
+  orderFilters[key] = val;
+  const box = document.getElementById('order-my-list-body');
+  if (box) { box.innerHTML = orderMyListBodyHTML(); orderIcons(); }
+}
+
+function orderMyListHTML() {
+  const statusOpts = Object.entries(ORDER_STATUSES).map(([k, m]) => `<option value="${k}" ${orderFilters.status === k ? 'selected' : ''}>${m.label}</option>`).join('');
+  return `
+  <div class="order-card p-0 overflow-hidden animate-fade-in">
+    <div class="crimson-card-header px-5 py-3.5 flex items-center justify-between">
+      <span class="font-bold text-sm flex items-center gap-2"><i data-lucide="list" class="w-4 h-4"></i>Danh Sách Order Đã Gửi</span>
+      <button onclick="orderSetPortalTab('new')" class="px-3 py-1.5 rounded-lg bg-white text-brand-700 text-xs font-bold hover:bg-rose-50">+ Gửi Order mới</button>
+    </div>
+    <div class="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 border-b border-slate-100 bg-slate-50/60">
+      <div class="relative"><i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i><input class="order-input pl-9" placeholder="Tìm theo Mã, Nội dung, Người xử lý..." value="${escapeHtml(orderFilters.q)}" oninput="orderSetFilter('q', this.value)" /></div>
+      <select class="order-input" onchange="orderSetFilter('type', this.value)">${orderOptions(ORDER_DOC_TYPES, orderFilters.type, '-- Tất cả Loại hồ sơ --')}</select>
+      <select class="order-input" onchange="orderSetFilter('dept', this.value)">${orderOptions(ORDER_DEPARTMENTS, orderFilters.dept, '-- Tất cả Đơn vị --')}</select>
+      <select class="order-input" onchange="orderSetFilter('status', this.value)"><option value="">-- Trạng thái --</option>${statusOpts}</select>
+    </div>
+    <div id="order-my-list-body">${orderMyListBodyHTML()}</div>
+  </div>`;
+}
+
+function orderMyListBodyHTML() {
+  const list = orderApplyFilters(orderMyOrders(), orderFilters);
+  if (!list.length) {
+    return `<div class="py-16 text-center"><div class="w-16 h-16 mx-auto rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400"><i data-lucide="inbox" class="w-8 h-8"></i></div>
+      <p class="text-sm font-semibold text-slate-600 mt-3">Không tìm thấy Order nào phù hợp</p><p class="text-xs text-slate-400">Hãy thử đổi bộ lọc hoặc gửi Order mới.</p></div>`;
+  }
+  const rows = list.map(o => {
+    const m = orderStatusMeta(o.status); const dl = orderDeadlineInfo(o);
+    return `<tr class="order-row" onclick="orderOpenDrawer('${o.id}','sender')">
+      <td class="px-4 py-3"><div class="font-bold text-brand-700 text-xs">${escapeHtml(o.code)}</div><div class="text-[10px] text-slate-400">${formatVNDate(o.createdAt)}</div></td>
+      <td class="px-4 py-3"><div class="text-xs font-semibold text-slate-700 line-clamp-2 max-w-xs">${escapeHtml(o.content)}</div><div class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(o.docType)} • ${escapeHtml(o.department)}</div></td>
+      <td class="px-4 py-3"><div class="flex items-center gap-2"><span class="order-avatar">${escapeHtml(orderInitials(o.assigneeName))}</span><span class="text-xs text-slate-600">${escapeHtml(o.assigneeName)}</span></div></td>
+      <td class="px-4 py-3 text-xs whitespace-nowrap">${formatVNDate(o.deadline)} ${dl ? `<div class="mt-0.5 inline-block px-1.5 rounded border text-[10px] font-bold ${dl.cls}">${dl.text}</div>` : ''}</td>
+      <td class="px-4 py-3">${orderBadge(o.status)}<div class="order-mini-progress mt-1.5"><span class="bg-${m.color}-500" style="width:${m.progress}%"></span></div></td>
+      <td class="px-4 py-3 text-right"><i data-lucide="chevron-right" class="w-4 h-4 text-slate-300"></i></td></tr>`;
+  }).join('');
+  const cards = list.map(o => {
+    const m = orderStatusMeta(o.status);
+    return `<div class="p-4 border-b border-slate-100 active:bg-slate-50" onclick="orderOpenDrawer('${o.id}','sender')">
+      <div class="flex justify-between items-start gap-2"><span class="font-bold text-brand-700 text-xs">${escapeHtml(o.code)}</span>${orderBadge(o.status)}</div>
+      <div class="text-sm font-semibold text-slate-700 mt-1.5 line-clamp-2">${escapeHtml(o.content)}</div>
+      <div class="text-[11px] text-slate-400 mt-1">${escapeHtml(o.assigneeName)} • Hạn ${formatVNDate(o.deadline)}</div>
+      <div class="order-mini-progress mt-2"><span class="bg-${m.color}-500" style="width:${m.progress}%"></span></div></div>`;
+  }).join('');
+  return `<div class="hidden md:block overflow-x-auto"><table class="w-full text-left">
+    <thead><tr class="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200"><th class="px-4 py-3">Mã Order</th><th class="px-4 py-3">Nội dung</th><th class="px-4 py-3">Người xử lý</th><th class="px-4 py-3">Hạn cuối</th><th class="px-4 py-3">Trạng thái</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div><div class="md:hidden">${cards}</div>`;
+}
+
+async function orderSenderCancel(id) {
+  const o = orderList.find(x => x.id === id);
+  if (!o || o.status !== 'pending') return;
+  const note = await orderAskNote('Hủy Order ' + o.code, 'Lý do hủy (không bắt buộc)', false);
+  if (note === null) return;
+  o.status = 'rejected';
+  o.history = (o.history || []).concat([{ status: 'rejected', by: o.senderName, byEmail: o.senderEmail, at: orderNowISO(), note: note ? 'Người gửi hủy: ' + note : 'Người gửi đã tự hủy Order' }]);
+  await orderPersist(o);
+  orderCloseDrawer();
+  showToast('Đã hủy Order ' + o.code, 'info');
+}
+function orderSenderEdit(id) {
+  orderCloseDrawer();
+  orderEditingId = id; orderPortalTab = 'new'; orderRenderPortal();
+}
+
+// ---------- Drawer chi tiết + Timeline ----------
+function orderOpenDrawer(id, mode) {
+  const o = orderList.find(x => x.id === id);
+  const drawer = document.getElementById('order-drawer');
+  if (!o || !drawer) return;
+  drawer.dataset.orderId = id; drawer.dataset.mode = mode;
+  const m = orderStatusMeta(o.status);
+  const links = orderExtractLinks(o.note);
+  const curStep = o.status === 'revise' ? 2 : m.step;
+  const stepper = o.status === 'rejected'
+    ? `<div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2"><i data-lucide="x-circle" class="w-4 h-4"></i>Order đã bị từ chối / hủy</div>`
+    : `<div class="order-stepper">${ORDER_STEPPER.map((s, i) => {
+        const sm = ORDER_STATUSES[s];
+        const state = i < curStep ? 'done' : i === curStep ? (o.status === 'revise' ? 'warn' : 'current') : '';
+        return `<div class="order-stepper-item ${state}"><div class="order-stepper-dot"><i data-lucide="${state === 'done' ? 'check' : state === 'warn' ? 'alert-triangle' : sm.icon}" class="w-3.5 h-3.5"></i></div><span>${state === 'warn' ? 'Cần bổ sung' : sm.short}</span></div>`;
+      }).join('')}</div>`;
+  const timeline = (o.history || []).slice().reverse().map((h, i) => {
+    const hm = orderStatusMeta(h.status);
+    return `<li class="order-tl-item ${i === 0 ? 'latest' : ''}"><span class="order-tl-dot bg-${hm.color}-500"><i data-lucide="${hm.icon}" class="w-3 h-3 text-white"></i></span>
+      <div class="flex flex-wrap items-center gap-2"><span class="text-xs font-bold text-slate-800">${hm.label}</span><span class="text-[10px] text-slate-400">${formatVNDateTime(h.at)}</span></div>
+      <div class="text-[11px] text-slate-500 mt-0.5">bởi <b class="text-slate-600">${escapeHtml(h.by || h.byEmail || '')}</b></div>
+      ${h.note ? `<div class="mt-1.5 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">${escapeHtml(h.note)}</div>` : ''}</li>`;
+  }).join('');
+  const info = [
+    ['Người gửi', `${escapeHtml(o.senderName)}<div class="text-[10px] text-slate-400">${escapeHtml(o.senderEmail)}</div>`],
+    ['Đơn vị gửi', escapeHtml(o.department)],
+    ['Loại hồ sơ', escapeHtml(o.docType)], ['Ưu tiên', orderPriorityChip(o.priority)],
+    ['Người xử lý', escapeHtml(o.assigneeName)],
+    ['Chi phí dự kiến', `${orderFormatMoney(o.cost)} VND`],
+    ['Ngày gửi', formatVNDate(o.sentDate)], ['Hạn cuối', formatVNDate(o.deadline)],
+    ['Cập nhật', formatVNDateTime(o.updatedAt)]
+  ].map(([k, v]) => `<div><div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">${k}</div><div class="text-xs text-slate-700 font-medium mt-0.5">${v}</div></div>`).join('');
+
+  let actions = '';
+  if (mode === 'sender') {
+    if (o.status === 'pending') actions = `<button onclick="orderSenderCancel('${o.id}')" class="order-btn-ghost text-rose-600 border-rose-200"><i data-lucide="x" class="w-4 h-4"></i>Hủy Order</button>`;
+    if (o.status === 'revise') actions = `<button onclick="orderSenderEdit('${o.id}')" class="order-btn-primary"><i data-lucide="file-pen-line" class="w-4 h-4"></i>Bổ sung & gửi lại</button>`;
+  } else {
+    actions = orderHandlerActionsHTML(o, true);
+  }
+
+  // Chỉ cho phép chuyển người xử lý ở khâu "Chờ tiếp nhận" (hoặc do Cấp Quản lý điều phối)
+  const canReassign = mode === 'handler' && (o.status === 'pending' || isManager(currentUser));
+  const reassign = canReassign ? `
+    <div class="order-card p-4">
+      <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 flex items-center justify-between">
+        <span>Chuyển người xử lý (Khâu Tiếp nhận)</span>
+        <span class="text-[10px] text-brand-600 font-semibold">Chưa vào bảng tuần</span>
+      </div>
+      <p class="text-[11px] text-slate-500 mb-2">Nếu hồ sơ này thuộc phụ trách của chuyên viên khác, hãy chuyển ngay trước khi Tiếp nhận.</p>
+      <select class="order-input" onchange="orderReassign('${o.id}', this.value)">
+        ${orderStaffCache.map(s => `<option value="${escapeHtml(s.email)}" ${s.email === o.assigneeEmail ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
+      </select>
+    </div>` : (mode === 'handler' && !['done', 'rejected'].includes(o.status) ? `
+    <div class="order-card p-3 bg-slate-50 border-slate-200 text-xs text-slate-600 flex items-center gap-2">
+      <i data-lucide="lock" class="w-4 h-4 text-slate-400 shrink-0"></i>
+      <span>Hồ sơ đã tiếp nhận xử lý bởi <b>${escapeHtml(o.assigneeName)}</b> (khóa chuyển giao giữa chừng).</span>
+    </div>` : '');
+
+  drawer.innerHTML = `
+  <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" onclick="orderCloseDrawer()"></div>
+  <aside class="order-drawer-panel">
+    <div class="crimson-card-header px-5 py-4 flex items-start justify-between gap-3">
+      <div class="min-w-0"><div class="text-[11px] text-rose-100">Chi tiết Order</div><div class="text-lg font-extrabold tracking-wide">${escapeHtml(o.code)}</div></div>
+      <button onclick="orderCloseDrawer()" class="p-2 rounded-xl hover:bg-white/15"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50">
+      <div class="flex flex-wrap items-center gap-2">${orderBadge(o.status, 'lg')} ${orderDeadlineInfo(o) ? `<span class="px-2 py-0.5 rounded-full border text-[11px] font-bold ${orderDeadlineInfo(o).cls}">${orderDeadlineInfo(o).text}</span>` : ''}</div>
+      ${stepper}
+      <div class="order-card p-4"><div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1">Nội dung hồ sơ</div><div class="text-sm text-slate-800 whitespace-pre-line">${escapeHtml(o.content)}</div>
+        ${o.note ? `<div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mt-3 mb-1">Ghi chú</div><div class="text-xs text-slate-600 whitespace-pre-line break-words">${escapeHtml(o.note)}</div>` : ''}
+        ${links.length ? `<div class="flex flex-wrap gap-1.5 mt-2">${links.map(l => `<a href="${escapeHtml(l)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-semibold hover:bg-blue-100 max-w-full"><i data-lucide="${orderLinkIcon(l)}" class="w-3 h-3 shrink-0"></i><span class="truncate max-w-[220px]">${escapeHtml(l.replace(/^https?:\/\//, ''))}</span></a>`).join('')}</div>` : ''}
+      </div>
+      <div class="order-card p-4 grid grid-cols-2 gap-x-4 gap-y-3">${info}</div>
+      ${reassign}
+      <div class="order-card p-4"><div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-3 flex items-center gap-1.5"><i data-lucide="history" class="w-3.5 h-3.5"></i>Tiến trình xử lý</div><ul class="order-timeline">${timeline}</ul></div>
+    </div>
+    ${actions ? `<div class="p-4 border-t border-slate-200 bg-white flex flex-wrap justify-end gap-2">${actions}</div>` : ''}
+  </aside>`;
+  drawer.classList.remove('hidden');
+  requestAnimationFrame(() => drawer.classList.add('open'));
+  orderIcons();
+}
+function orderCloseDrawer() {
+  const drawer = document.getElementById('order-drawer');
+  if (!drawer) return;
+  drawer.classList.remove('open');
+  setTimeout(() => { drawer.classList.add('hidden'); drawer.innerHTML = ''; drawer.dataset.orderId = ''; }, 220);
+}
+function orderRefreshDrawer() {
+  const drawer = document.getElementById('order-drawer');
+  if (drawer && !drawer.classList.contains('hidden') && drawer.dataset.orderId) {
+    const scroll = drawer.querySelector('.overflow-y-auto')?.scrollTop || 0;
+    orderOpenDrawer(drawer.dataset.orderId, drawer.dataset.mode);
+    const el = drawer.querySelector('.overflow-y-auto'); if (el) el.scrollTop = scroll;
+  }
+}
+
+// ---------- Người xử lý: thao tác ----------
+const ORDER_TRANSITIONS = {
+  pending:  [['received', 'Tiếp nhận', 'inbox', 'primary'], ['rejected', 'Từ chối', 'x-circle', 'danger']],
+  received: [['reviewed', 'Duyệt nội dung', 'file-check-2', 'primary'], ['done', 'Hoàn tất', 'badge-check', 'success'], ['revise', 'Yêu cầu bổ sung', 'alert-triangle', 'warn'], ['rejected', 'Từ chối', 'x-circle', 'danger']],
+  reviewed: [['done', 'Hoàn tất', 'badge-check', 'success'], ['revise', 'Yêu cầu bổ sung', 'alert-triangle', 'warn'], ['rejected', 'Từ chối', 'x-circle', 'danger']],
+  revise:   [['received', 'Tiếp nhận lại', 'inbox', 'ghost']],
+  done: [], rejected: []
+};
+function orderHandlerActionsHTML(o, big) {
+  const cls = { primary: 'order-btn-primary', success: 'order-btn-success', warn: 'order-btn-warn', danger: 'order-btn-ghost text-rose-600 border-rose-200', ghost: 'order-btn-ghost' };
+  return (ORDER_TRANSITIONS[o.status] || []).map(([to, label, icon, kind]) =>
+    `<button onclick="event.stopPropagation();orderChangeStatus('${o.id}','${to}')" class="${cls[kind]} ${big ? '' : 'order-btn-xs'}"><i data-lucide="${icon}" class="w-${big ? 4 : 3} h-${big ? 4 : 3}"></i>${label}</button>`).join('');
+}
+
+function orderActorName() {
+  if (ORDER_DEMO_MODE && orderPortalUser && orderPortalView === 'handler') return orderPortalUser.name;
+  return String(currentUser.name || currentUser.email || 'Người xử lý').replace(/\s*\(.+\)$/, '');
+}
+function orderActorEmail() {
+  if (ORDER_DEMO_MODE && orderPortalUser && orderPortalView === 'handler') return orderPortalUser.email;
+  return currentUser.email || '';
+}
+
+async function orderChangeStatus(id, to) {
+  const o = orderList.find(x => x.id === id);
+  if (!o || o.status === to) return;
+  const needNote = to === 'revise' || to === 'rejected';
+  const titles = { received: 'Tiếp nhận Order', reviewed: 'Duyệt nội dung', revise: 'Yêu cầu bổ sung', done: 'Hoàn tất Order', rejected: 'Từ chối Order', pending: 'Chuyển về Chờ tiếp nhận' };
+  const note = await orderAskNote(`${titles[to] || 'Cập nhật'} • ${o.code}`,
+    needNote ? 'Nội dung cần người gửi điều chỉnh / lý do (bắt buộc)' : 'Ghi chú gửi tới người gửi (không bắt buộc)', needNote);
+  if (note === null) return;
+  o.status = to;
+  o.history = (o.history || []).concat([{ status: to, by: orderActorName(), byEmail: orderActorEmail(), at: orderNowISO(), note }]);
+  if (to === 'received' && !o.linkedTaskId) orderCreateDossier(o);
+  else orderSyncTask(o);
+  await orderPersist(o);
+  orderRerender();
+  showToast(`${o.code} → ${orderStatusMeta(to).label}`, 'success');
+}
+
+async function orderReassign(id, email) {
+  const o = orderList.find(x => x.id === id);
+  if (!o || o.assigneeEmail === email) return;
+
+  // Kiểm tra điều kiện: chỉ cho chuyển ở khâu Chờ tiếp nhận (hoặc Quản lý)
+  if (o.status !== 'pending' && !isManager(currentUser)) {
+    showToast('Chỉ được chuyển hồ sơ ở khâu Chờ tiếp nhận! Không chuyển việc đang làm giữa chừng.', 'error');
+    orderRefreshDrawer();
+    return;
+  }
+
+  const st = orderStaffCache.find(s => s.email === email);
+  const targetName = st ? st.name : email;
+
+  // Bắt buộc nhập lý do chuyển giao
+  const reason = await orderAskNote(
+    `Chuyển Order ${o.code} cho ${targetName}`,
+    'Lý do chuyển người xử lý (bắt buộc: ví dụ đúng chuyên môn, quá tải...)',
+    true
+  );
+  if (!reason) {
+    orderRefreshDrawer(); // Revert select nếu người dùng bấm Hủy
+    return;
+  }
+
+  const oldName = o.assigneeName;
+  o.assigneeEmail = email;
+  o.assigneeName = targetName;
+  o.history = (o.history || []).concat([{
+    status: o.status,
+    by: orderActorName(),
+    byEmail: orderActorEmail(),
+    at: orderNowISO(),
+    note: `Chuyển người xử lý: ${oldName} → ${targetName}. Lý do: ${reason}`
+  }]);
+
+  await orderPersist(o);
+  orderRerender();
+  showToast(`Đã chuyển ${o.code} cho ${targetName} (Khâu Chờ tiếp nhận)`, 'success');
+}
+
+function orderAskNote(title, placeholder, required) {
+  return new Promise(resolve => {
+    const wrap = document.createElement('div');
+    wrap.className = 'fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in';
+    wrap.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div class="crimson-card-header px-5 py-3.5 font-bold text-sm">${escapeHtml(title)}</div>
+      <div class="p-5"><textarea rows="3" class="order-input" placeholder="${escapeHtml(placeholder)}"></textarea>
+      <p class="hidden text-[11px] text-rose-600 mt-1 order-note-err">Vui lòng nhập nội dung.</p></div>
+      <div class="px-5 pb-5 flex justify-end gap-2"><button class="order-btn-ghost" data-act="cancel">Hủy</button><button class="order-btn-primary" data-act="ok">Xác nhận</button></div></div>`;
+    document.body.appendChild(wrap);
+    const ta = wrap.querySelector('textarea'); setTimeout(() => ta.focus(), 50);
+    const done = val => { wrap.remove(); resolve(val); };
+    wrap.querySelector('[data-act="cancel"]').onclick = () => done(null);
+    wrap.onclick = ev => { if (ev.target === wrap) done(null); };
+    wrap.querySelector('[data-act="ok"]').onclick = () => {
+      const v = ta.value.trim();
+      if (required && !v) { wrap.querySelector('.order-note-err').classList.remove('hidden'); return; }
+      done(v);
+    };
+  });
+}
+
+// Tạo Hồ sơ trong Bảng phân việc khi Tiếp nhận Order
+function orderBuildTask(o) {
+  return {
+    id: 'task_ord_' + Date.now(), code: o.code,
+    title: `[Order] ${o.docType}: ${String(o.content).slice(0, 90)}`,
+    client: `${o.senderName} – ${o.department}`,
+    category: 'Giải quyết các yêu cầu phát sinh',
+    priority: o.priority || 'medium',
+    assignedDate: orderTodayStr(), deadline: o.deadline,
+    assignee: o.assigneeEmail, status: 'in_progress', progress: ORDER_STATUSES.received.progress,
+    link: orderExtractLinks(o.note)[0] || '',
+    notes: `Order từ ${o.senderName} (${o.senderEmail}) • Chi phí: ${orderFormatMoney(o.cost)} VND • ${o.note || ''}`.trim(),
+    completedAt: null, updatedAt: orderNowISO(), rating: null, approval: '', managerFeedback: '', sourceOrderId: o.id
+  };
+}
+function orderFindAssigneeWorkspace(email) {
+  if (!email) return null;
+  if (!isManager(currentUser) && workspaceData && (workspaceData.ownerEmail || '').toLowerCase() === email) return { ws: workspaceData, own: true };
+  const entry = Object.entries(teamWorkspaces || {}).find(([, ws]) => (ws.ownerEmail || '').toLowerCase() === email);
+  return entry ? { ws: entry[1], own: false, empId: entry[0] } : null;
+}
+function orderSaveForeignWorkspace(ws) {
+  if (!fbDb || orderUseLocal || !ws || !ws.ownerEmail) return;
+  fbDb.collection('wf_employees').doc(ws.ownerEmail.trim().toLowerCase())
+    .set({ tasks: ws.tasks, updatedAt: orderNowISO() }, { merge: true })
+    .catch(err => console.warn('Order → dossier sync warning:', err));
+}
+function orderCreateDossier(o) {
+  if (ORDER_DEMO_MODE && orderPortalView === 'handler') { o.linkedTaskId = 'demo_task'; return; }
+  const target = orderFindAssigneeWorkspace(o.assigneeEmail);
+  if (!target) return;
+  const task = orderBuildTask(o);
+  target.ws.tasks = Array.isArray(target.ws.tasks) ? target.ws.tasks : [];
+  target.ws.tasks.unshift(task);
+  o.linkedTaskId = task.id;
+  if (target.own) {
+    recordJournalLog('created', task.code, task.title, `Tự động tạo từ Order của ${o.senderName} (${o.department}) • Deadline: ${formatVNDate(o.deadline)}`);
+    saveWorkspaceData();
+  } else {
+    orderSaveForeignWorkspace(target.ws);
+  }
+  showToast(`📁 Đã tạo Hồ sơ ${task.code} trong bảng phân việc của ${o.assigneeName}`, 'success');
+  try { renderAll(); } catch (e) { /* noop */ }
+}
+function orderSyncTask(o) {
+  if (!o.linkedTaskId || o.linkedTaskId === 'demo_task') return;
+  const target = orderFindAssigneeWorkspace(o.assigneeEmail);
+  if (!target || !Array.isArray(target.ws.tasks)) return;
+  const t = target.ws.tasks.find(x => x.id === o.linkedTaskId);
+  if (!t) return;
+  const m = orderStatusMeta(o.status);
+  t.progress = m.progress;
+  t.status = o.status === 'done' ? 'completed' : (o.status === 'rejected' ? 'pending' : 'in_progress');
+  t.completedAt = o.status === 'done' ? orderNowISO() : null;
+  t.updatedAt = orderNowISO();
+  if (target.own) {
+    recordJournalLog(o.status === 'done' ? 'completed' : 'updated', t.code, t.title, `Order chuyển trạng thái: ${m.label}`);
+    saveWorkspaceData();
+  } else orderSaveForeignWorkspace(target.ws);
+}
+
+// ---------- Hộp Order (Kanban / Bảng) ----------
+function orderInboxSource() {
+  if (ORDER_DEMO_MODE && orderPortalUser && orderPortalView === 'handler') return orderList;
+  const me = (currentUser.email || '').toLowerCase();
+  if (isManager(currentUser) && orderInboxFilters.scope === 'all') return orderList;
+  return orderList.filter(o => o.assigneeEmail === me);
+}
+function orderSetInboxFilter(k, v) { orderInboxFilters[k] = v; orderRerender(); }
+function orderSetInboxView(v) { orderInboxView = v; orderRerender(); }
+function orderCopyPortalLink() {
+  const url = `${location.origin}${location.pathname}#order`;
+  navigator.clipboard.writeText(url).then(() => showToast('Đã sao chép link Cổng Order: ' + url, 'success'));
+}
+
+function orderRenderInbox(containerId = 'orders-inbox-root', isDemo = false) {
+  const root = document.getElementById(containerId);
+  if (!root) return;
+  const src = orderInboxSource();
+  const list = orderApplyFilters(src, { q: orderInboxFilters.q, status: orderInboxFilters.status });
+  const c = s => src.filter(o => o.status === s).length;
+  const overdue = src.filter(o => (orderDeadlineInfo(o) || {}).text === 'Quá hạn').length;
+  const stats = [
+    { label: 'Chờ tiếp nhận', val: c('pending'), icon: 'bell-ring', cls: 'from-rose-500 to-brand-700', pulse: c('pending') > 0 },
+    { label: 'Đang xử lý', val: c('received') + c('reviewed'), icon: 'loader', cls: 'from-blue-500 to-indigo-600' },
+    { label: 'Chờ người gửi bổ sung', val: c('revise'), icon: 'alert-triangle', cls: 'from-amber-400 to-orange-500' },
+    { label: 'Hoàn tất', val: c('done'), icon: 'badge-check', cls: 'from-emerald-500 to-teal-600' },
+    { label: 'Quá hạn', val: overdue, icon: 'alarm-clock', cls: 'from-slate-600 to-slate-800' }
+  ];
+  const scopeToggle = (!isDemo && isManager(currentUser)) ? `
+    <div class="inline-flex bg-slate-100 rounded-xl p-1 text-xs">
+      <button onclick="orderSetInboxFilter('scope','all')" class="px-3 py-1.5 rounded-lg font-bold ${orderInboxFilters.scope === 'all' ? 'bg-white shadow text-brand-700' : 'text-slate-500'}">Toàn team</button>
+      <button onclick="orderSetInboxFilter('scope','mine')" class="px-3 py-1.5 rounded-lg font-bold ${orderInboxFilters.scope !== 'all' ? 'bg-white shadow text-brand-700' : 'text-slate-500'}">Giao cho tôi</button></div>` : '';
+  root.innerHTML = `
+  <div class="space-y-4 animate-fade-in">
+    <div class="order-card p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div class="flex items-center gap-3"><div class="w-11 h-11 rounded-2xl crimson-card-header flex items-center justify-center shadow"><i data-lucide="mail-open" class="w-5 h-5"></i></div>
+        <div><div class="font-extrabold text-slate-800">Hộp Order</div><div class="text-[11px] text-slate-500">Order từ các phòng ban gửi tới — kéo thả thẻ để đổi trạng thái</div></div></div>
+      <div class="flex flex-wrap items-center gap-2">${scopeToggle}
+        <button onclick="orderCopyPortalLink()" class="order-btn-ghost order-btn-xs"><i data-lucide="link" class="w-3.5 h-3.5"></i>Copy link Cổng Order</button>
+        ${!isDemo ? `<button onclick="location.hash='order'" class="order-btn-primary order-btn-xs"><i data-lucide="external-link" class="w-3.5 h-3.5"></i>Mở Cổng Order</button>` : ''}
+      </div>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">${stats.map(s => `<div class="order-stat bg-gradient-to-br ${s.cls} ${s.pulse ? 'order-pulse' : ''}"><div><div class="text-[10px] uppercase tracking-wider opacity-80 font-semibold">${s.label}</div><div class="text-2xl font-extrabold mt-0.5">${s.val}</div></div><i data-lucide="${s.icon}" class="w-8 h-8 opacity-30"></i></div>`).join('')}</div>
+    <div class="flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
+      <div class="flex flex-1 gap-2 flex-col sm:flex-row">
+        <div class="relative flex-1 max-w-md"><i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i><input id="order-inbox-search" class="order-input pl-9" placeholder="Tìm mã, nội dung, người gửi, đơn vị..." value="${escapeHtml(orderInboxFilters.q)}" oninput="orderInboxFilters.q=this.value;clearTimeout(window._oiT);window._oiT=setTimeout(()=>{orderRerender();const el=document.getElementById('order-inbox-search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},250)" /></div>
+        ${orderInboxView === 'table' ? `<select class="order-input sm:w-56" onchange="orderSetInboxFilter('status',this.value)"><option value="">-- Tất cả trạng thái --</option>${Object.entries(ORDER_STATUSES).map(([k, m]) => `<option value="${k}" ${orderInboxFilters.status === k ? 'selected' : ''}>${m.label}</option>`).join('')}</select>` : ''}
+      </div>
+      <div class="inline-flex bg-white border border-slate-200 rounded-xl p-1 text-xs shadow-sm self-start">
+        <button onclick="orderSetInboxView('kanban')" class="px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 ${orderInboxView === 'kanban' ? 'bg-brand-600 text-white' : 'text-slate-500'}"><i data-lucide="columns-3" class="w-3.5 h-3.5"></i>Kanban</button>
+        <button onclick="orderSetInboxView('table')" class="px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 ${orderInboxView === 'table' ? 'bg-brand-600 text-white' : 'text-slate-500'}"><i data-lucide="table" class="w-3.5 h-3.5"></i>Bảng</button>
+      </div>
+    </div>
+    ${orderInboxView === 'kanban' ? orderKanbanHTML(list) : orderInboxTableHTML(list)}
+  </div>`;
+  orderIcons();
+}
+
+function orderKanbanCard(o) {
+  const dl = orderDeadlineInfo(o);
+  return `<div class="order-kcard" draggable="true" ondragstart="orderDragId='${o.id}';this.classList.add('dragging')" ondragend="this.classList.remove('dragging')" onclick="orderOpenDrawer('${o.id}','handler')">
+    <div class="flex items-center justify-between gap-2"><span class="text-[11px] font-extrabold text-brand-700">${escapeHtml(o.code)}</span>${orderPriorityChip(o.priority)}</div>
+    <div class="text-xs font-semibold text-slate-800 mt-1.5 line-clamp-3">${escapeHtml(o.content)}</div>
+    <div class="flex flex-wrap gap-1 mt-2"><span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">${escapeHtml(o.docType)}</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">${escapeHtml(o.department)}</span></div>
+    <div class="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-100">
+      <div class="flex items-center gap-1.5 min-w-0"><span class="order-avatar">${escapeHtml(orderInitials(o.senderName))}</span><span class="text-[10px] text-slate-500 truncate">${escapeHtml(o.senderName)}</span></div>
+      <span class="text-[10px] font-semibold ${dl ? dl.cls + ' px-1.5 rounded border' : 'text-slate-400'} whitespace-nowrap"><i data-lucide="calendar" class="w-3 h-3 inline -mt-0.5"></i> ${formatVNDate(o.deadline).slice(0, 5)}${dl ? ' • ' + dl.text : ''}</span>
+    </div>
+    ${(ORDER_TRANSITIONS[o.status] || []).length ? `<div class="flex flex-wrap gap-1 mt-2">${orderHandlerActionsHTML(o, false)}</div>` : ''}
+  </div>`;
+}
+function orderKanbanHTML(list) {
+  return `<div class="order-kanban">${ORDER_KANBAN_COLS.map(s => {
+    const m = ORDER_STATUSES[s]; const items = list.filter(o => o.status === s);
+    return `<div class="order-kcol" ondragover="event.preventDefault();this.classList.add('drop-hover')" ondragleave="this.classList.remove('drop-hover')" ondrop="this.classList.remove('drop-hover');if(orderDragId){orderChangeStatus(orderDragId,'${s}');orderDragId=null;}">
+      <div class="order-kcol-head border-${m.color}-400"><span class="flex items-center gap-1.5"><i data-lucide="${m.icon}" class="w-3.5 h-3.5 text-${m.color}-600"></i>${m.short}</span><span class="px-2 rounded-full bg-${m.color}-100 text-${m.color}-700 text-[10px] font-extrabold">${items.length}</span></div>
+      <div class="space-y-2.5 min-h-[80px]">${items.map(orderKanbanCard).join('') || `<div class="text-[11px] text-slate-400 text-center py-6 border-2 border-dashed border-slate-200 rounded-xl">Kéo thả vào đây</div>`}</div>
+    </div>`;
+  }).join('')}</div>${list.some(o => o.status === 'rejected') ? `<p class="text-[11px] text-slate-400">* ${list.filter(o => o.status === 'rejected').length} Order đã từ chối/hủy — xem ở chế độ Bảng.</p>` : ''}`;
+}
+function orderInboxTableHTML(list) {
+  if (!list.length) return `<div class="order-card py-14 text-center text-sm text-slate-500"><i data-lucide="inbox" class="w-10 h-10 mx-auto text-slate-300"></i><p class="mt-2">Chưa có Order nào.</p></div>`;
+  return `<div class="order-card p-0 overflow-x-auto"><table class="w-full text-left min-w-[900px]">
+    <thead><tr class="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200 bg-slate-50"><th class="px-4 py-3">Mã</th><th class="px-4 py-3">Người gửi</th><th class="px-4 py-3">Loại</th><th class="px-4 py-3">Nội dung</th><th class="px-4 py-3">Người xử lý</th><th class="px-4 py-3">Hạn cuối</th><th class="px-4 py-3">Trạng thái</th><th class="px-4 py-3 text-right">Thao tác</th></tr></thead>
+    <tbody>${list.map(o => { const dl = orderDeadlineInfo(o); return `<tr class="order-row" onclick="orderOpenDrawer('${o.id}','handler')">
+      <td class="px-4 py-3 text-xs font-bold text-brand-700 whitespace-nowrap">${escapeHtml(o.code)}</td>
+      <td class="px-4 py-3"><div class="text-xs font-semibold text-slate-700">${escapeHtml(o.senderName)}</div><div class="text-[10px] text-slate-400">${escapeHtml(o.department)}</div></td>
+      <td class="px-4 py-3 text-xs text-slate-600">${escapeHtml(o.docType)}</td>
+      <td class="px-4 py-3 text-xs text-slate-700 max-w-xs"><div class="line-clamp-2">${escapeHtml(o.content)}</div></td>
+      <td class="px-4 py-3 text-xs text-slate-600">${escapeHtml(o.assigneeName)}</td>
+      <td class="px-4 py-3 text-xs whitespace-nowrap">${formatVNDate(o.deadline)}${dl ? `<div class="inline-block mt-0.5 px-1.5 rounded border text-[10px] font-bold ${dl.cls}">${dl.text}</div>` : ''}</td>
+      <td class="px-4 py-3">${orderBadge(o.status)}</td>
+      <td class="px-4 py-3"><div class="flex justify-end flex-wrap gap-1">${orderHandlerActionsHTML(o, false)}</div></td></tr>`; }).join('')}</tbody></table></div>`;
+}
+
+function orderUpdateNavBadges() {
+  const me = (currentUser.email || '').toLowerCase();
+  const pending = orderList.filter(o => o.status === 'pending' && (o.assigneeEmail === me || isManager(currentUser))).length;
+  ['nav-orders-count', 'nav-orders-mgr-count'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = pending;
+    el.classList.toggle('hidden', pending === 0);
+  });
+}
+
+function orderRerender() {
+  const portal = document.getElementById('order-portal');
+  const portalOpen = portal && portal.classList.contains('flex');
+  if (portalOpen) {
+    if (ORDER_DEMO_MODE && orderPortalView === 'handler') orderRenderInbox('order-portal-inbox', true);
+    else if (orderPortalUser) {
+      const content = document.getElementById('order-portal-content');
+      if (content && orderPortalTab === 'mine') {
+        // Chỉ vẽ lại danh sách + thống kê, không làm mất form đang nhập
+        orderRenderPortal();
+      } else if (!content) orderRenderPortal();
+    }
+  }
+  if (typeof activeTab !== 'undefined' && activeTab === 'orders') orderRenderInbox('orders-inbox-root');
+  orderUpdateNavBadges();
+  orderRefreshDrawer();
+}
+
+// ---------- Tích hợp với app chính ----------
+function orderHandleHash() {
+  if (location.hash === '#order') orderOpenPortal();
+}
+window.addEventListener('hashchange', orderHandleHash);
+window.addEventListener('DOMContentLoaded', () => {
+  if (location.hash === '#order') { orderOpenPortal(); return; }
+  if (isUserAuthenticatedSession()) {
+    orderLoadStaff();
+    orderSubscribe('handler');
+  }
+});
+// Sau khi đăng nhập app chính bằng OTP → tự kết nối Hộp Order
+const _orderOrigVerifyOTP = handleVerifyOTP;
+handleVerifyOTP = async function (e) {
+  await _orderOrigVerifyOTP(e);
+  if (isUserAuthenticatedSession()) { orderLoadStaff(); orderSubscribe('handler'); }
+};
