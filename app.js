@@ -5588,7 +5588,7 @@ function orderRenderPortal() {
           <img src="logo-vaschools.png" alt="VAschools Logo" class="w-full h-full object-contain filter drop-shadow" />
         </div>
         <div class="min-w-0">
-          <h1 class="font-extrabold tracking-wide text-sm sm:text-lg leading-tight truncate">CỔNG GỬI ORDER & THEO DÕI HỒ SƠ</h1>
+          <h1 class="font-extrabold tracking-wide text-sm sm:text-lg leading-tight truncate">CỔNG TIẾP NHẬN YÊU CẦU - BỘ PHẬN PHÁP CHẾ </h1>
           <p class="text-[11px] text-rose-100/90 truncate">Gửi yêu cầu hồ sơ – hệ thống tự ghi nhận – theo dõi tiến trình realtime</p>
         </div>
       </div>
