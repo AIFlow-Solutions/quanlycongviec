@@ -6532,7 +6532,7 @@ function getUrgentDeadlineItems() {
   const me = (currentUser?.email || '').toLowerCase();
   const mgr = typeof isManager === 'function' && isManager(currentUser);
 
-  const checkTasks = (tasks, ownerLabel) => {
+  const checkTasks = (tasks, ownerLabel, empId) => {
     (tasks || []).forEach(t => {
       if (!t || t.status === 'completed' || !t.deadline) return;
       const dl = parseLocalYMD(t.deadline);
@@ -6543,6 +6543,7 @@ function getUrgentDeadlineItems() {
         items.push({
           kind: 'task',
           id: t.id,
+          empId: empId || activeEmployeeId || '',
           code: t.code || 'HS',
           title: t.title || 'Hồ sơ chưa đặt tên',
           owner: ownerLabel || t.assignee || '',
@@ -6554,13 +6555,13 @@ function getUrgentDeadlineItems() {
   };
 
   if (mgr && typeof teamWorkspaces === 'object') {
-    Object.values(teamWorkspaces).forEach(ws => {
+    Object.entries(teamWorkspaces).forEach(([empKey, ws]) => {
       if (ws && Array.isArray(ws.tasks)) {
-        checkTasks(ws.tasks, ws.ownerName || ws.ownerEmail);
+        checkTasks(ws.tasks, ws.ownerName || ws.ownerEmail, ws.empId || empKey);
       }
     });
   } else if (workspaceData && Array.isArray(workspaceData.tasks)) {
-    checkTasks(workspaceData.tasks, workspaceData.ownerName || me);
+    checkTasks(workspaceData.tasks, workspaceData.ownerName || me, activeEmployeeId);
   }
 
   (orderList || []).forEach(o => {
@@ -6592,13 +6593,18 @@ function closeRedDeadlineAlert() {
   if (modal) modal.remove();
 }
 
-function openUrgentItem(kind, id) {
+function openUrgentItem(kind, id, empId = '') {
   closeRedDeadlineAlert();
   if (kind === 'order') {
     if (typeof switchTab === 'function') switchTab('orders');
     setTimeout(() => { if (typeof orderOpenDrawer === 'function') orderOpenDrawer(id, 'handler'); }, 120);
   } else {
-    if (typeof switchTab === 'function') switchTab('dossiers');
+    if (empId && empId !== activeEmployeeId && typeof switchActiveEmployeeWorkspace === 'function') {
+      switchActiveEmployeeWorkspace(empId, 'dossiers');
+    } else if (typeof switchTab === 'function') {
+      switchTab('dossiers');
+    }
+    setTimeout(() => { if (typeof openTaskModal === 'function') openTaskModal(id); }, 120);
   }
 }
 
@@ -6641,7 +6647,7 @@ function checkAndShowRedDeadlineAlert(forceShow = false) {
           <div class="text-xs font-bold text-slate-800 mt-1 line-clamp-2">${escapeHtml(it.title)}</div>
           <div class="text-[11px] text-slate-500 mt-0.5">Hạn chót: <b class="text-red-700">${formatVNDate(it.deadline)}</b> ${it.owner ? `• Phụ trách: <b>${escapeHtml(it.owner)}</b>` : ''}</div>
         </div>
-        <button type="button" onclick="openUrgentItem('${it.kind}', '${escapeHtml(it.id)}')" class="shrink-0 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition cursor-pointer">
+        <button type="button" onclick="openUrgentItem('${it.kind}', '${escapeHtml(it.id)}', '${escapeHtml(it.empId || '')}')" class="shrink-0 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition cursor-pointer">
           Mở xử lý →
         </button>
       </div>`;
