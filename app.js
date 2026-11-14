@@ -5273,7 +5273,22 @@ const ORDER_COLLECTION = 'wf_orders';
 const ORDER_DEMO_MODE = new URLSearchParams(window.location.search).has('demo');
 
 const ORDER_DEPARTMENTS = ['P. Công nghệ', 'P. CSVC', 'P. Đầu tư', 'P. HCNS', 'P. Kế toán', 'P. Kinh doanh', 'P. Vận hành', 'VP TCT', 'HĐHT KPT', 'HĐHT MN', 'HĐTA', 'BGH cơ sở'];
-const ORDER_DOC_TYPES = ['Tờ trình', 'Đề xuất / Kế hoạch', 'Hợp đồng', 'Phụ lục hợp đồng', 'Thanh toán / Tạm ứng', 'Công văn', 'Quyết định', 'Báo cáo', 'Giấy tờ pháp lý', 'Khác'];
+const ORDER_DOC_TYPES = [
+  'Rà soát Hợp đồng',
+  'Cung cấp giấy tờ pháp lý',
+  'Tư vấn pháp lý và hỗ trợ nội bộ',
+  'Nghiên cứu, thực hiện các dự án cho nội bộ',
+  'Cập nhật các quy định pháp luật mới',
+  'Lưu trữ và quản lý giấy tờ pháp lý nội bộ',
+  'Làm việc với CQNN và Đơn vị dịch vụ',
+  'Giải quyết các yêu cầu phát sinh',
+  'Khác'
+];
+const ORDER_OANH_DEFAULT_TYPES = [
+  'Cung cấp giấy tờ pháp lý',
+  'Tư vấn pháp lý và hỗ trợ nội bộ',
+  'Nghiên cứu, thực hiện các dự án cho nội bộ'
+];
 
 const ORDER_STATUSES = {
   pending:  { label: 'Chờ tiếp nhận',          short: 'Chờ tiếp nhận', icon: 'hourglass',      color: 'slate',   step: 0, progress: 10 },
@@ -5777,11 +5792,88 @@ function orderOptions(list, selected, placeholder) {
   return `<option value="">${placeholder}</option>` + list.map(v => `<option ${v === selected ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
 }
 
+function orderOnDocTypeChange(docType) {
+  const hint = document.getElementById('of-auto-assignee-hint');
+  const sel = document.getElementById('of-assignee');
+  if (!sel) return;
+  if (ORDER_OANH_DEFAULT_TYPES.includes(docType)) {
+    const oanh = orderStaffCache.find(s =>
+      (s.email || '').toLowerCase().includes('oanh') ||
+      (s.name || '').toLowerCase().includes('oanh')
+    );
+    if (oanh) {
+      sel.value = oanh.email;
+      if (hint) {
+        hint.textContent = `✨ Mặc định chuyển trực tiếp tới: ${oanh.name || oanh.email}`;
+        hint.classList.remove('hidden');
+      }
+      return;
+    }
+  }
+  if (hint) hint.classList.add('hidden');
+}
+
+async function orderSendNotifyEmail(order, isEdit) {
+  const webhookUrl = typeof getOTPWebhookUrl === 'function' ? getOTPWebhookUrl() : '';
+  if (!webhookUrl || !order || !order.assigneeEmail || ORDER_DEMO_MODE) return false;
+  try {
+    const portalLink = `${window.location.origin}${window.location.pathname}`;
+    const subject = `[Hệ Thống Pháp Chế] ${isEdit ? 'Bổ sung hồ sơ' : 'Có Order hồ sơ mới'} ${order.code}: ${order.docType}`;
+    const htmlBody = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:560px;margin:0 auto;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+        <div style="background:#9e0b22;color:#ffffff;padding:18px 24px;">
+          <div style="font-size:12px;opacity:0.9;text-transform:uppercase;letter-spacing:1px;">VA Schools • Bộ Phận Pháp Chế</div>
+          <h2 style="margin:4px 0 0;font-size:18px;">${isEdit ? 'Hồ sơ vừa được bổ sung thông tin' : 'Thông báo có Order hồ sơ mới'}</h2>
+        </div>
+        <div style="padding:20px 24px;color:#1e293b;font-size:14px;line-height:1.6;">
+          <p>Xin chào <strong>${escapeHtml(order.assigneeName || order.assigneeEmail)}</strong>,</p>
+          <p>Bạn vừa nhận được một yêu cầu hồ sơ mới trên Cổng Tiếp Nhận:</p>
+          <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:13px;">
+            <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;background:#f8fafc;width:36%;"><strong>Mã hồ sơ</strong></td><td style="padding:6px 10px;border:1px solid #e2e8f0;color:#9e0b22;font-weight:bold;">${escapeHtml(order.code)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Loại hồ sơ</strong></td><td style="padding:6px 10px;border:1px solid #e2e8f0;">${escapeHtml(order.docType)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Người gửi / Đơn vị</strong></td><td style="padding:6px 10px;border:1px solid #e2e8f0;">${escapeHtml(order.senderName)} (${escapeHtml(order.department)})</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Hạn cuối cần trả</strong></td><td style="padding:6px 10px;border:1px solid #e2e8f0;color:#dc2626;font-weight:bold;">${formatVNDate(order.deadline)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Nội dung</strong></td><td style="padding:6px 10px;border:1px solid #e2e8f0;">${escapeHtml(order.content)}</td></tr>
+          </table>
+          <p style="margin-top:16px;">Vui lòng truy cập hệ thống để kiểm tra và bấm <strong>Tiếp nhận</strong>:</p>
+          <p><a href="${portalLink}" style="display:inline-block;background:#9e0b22;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:bold;">Mở Bàn Làm Việc Ngay</a></p>
+        </div>
+      </div>`;
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'send_order_notify',
+        recipient: order.assigneeEmail,
+        email: order.assigneeEmail,
+        subject,
+        htmlBody,
+        orderCode: order.code,
+        docType: order.docType,
+        senderName: order.senderName,
+        senderDept: order.department,
+        deadline: order.deadline,
+        content: order.content
+      })
+    });
+    return true;
+  } catch (err) {
+    console.warn('Order email notify warning:', err);
+    return false;
+  }
+}
+
 function orderFormHTML() {
   const o = orderEditingId ? (orderList.find(x => x.id === orderEditingId) || {}) : {};
   const u = orderPortalUser || {};
+  const isOanhDefault = ORDER_OANH_DEFAULT_TYPES.includes(o.docType);
+  const oanhStaff = orderStaffCache.find(s =>
+    (s.email || '').toLowerCase().includes('oanh') ||
+    (s.name || '').toLowerCase().includes('oanh')
+  );
+  const preselectedAssignee = o.assigneeEmail || (isOanhDefault && oanhStaff ? oanhStaff.email : '');
   const staffOpts = `<option value="">-- Chọn nhân viên xử lý --</option>` + orderStaffCache.map(s =>
-    `<option value="${escapeHtml(s.email)}" ${s.email === o.assigneeEmail ? 'selected' : ''}>${escapeHtml(s.name)}${s.name.includes('@') ? '' : ' — ' + escapeHtml(s.email)}</option>`).join('');
+    `<option value="${escapeHtml(s.email)}" ${s.email === preselectedAssignee ? 'selected' : ''}>${escapeHtml(s.name)}${s.name.includes('@') ? '' : ' — ' + escapeHtml(s.email)}</option>`).join('');
   const pr = o.priority || 'medium';
   return `
   <form id="order-form" onsubmit="orderSubmit(event)" class="space-y-4 animate-fade-in">
@@ -5797,8 +5889,12 @@ function orderFormHTML() {
     <div class="order-card">
       <div class="order-card-title"><span class="order-step-dot">2</span>Thông tin hồ sơ & người xử lý</div>
       <div class="grid sm:grid-cols-2 gap-4">
-        <div><label class="order-label">Loại hồ sơ <span class="text-rose-500">*</span></label><select id="of-type" required class="order-input">${orderOptions(ORDER_DOC_TYPES, o.docType, '-- Chọn loại hồ sơ --')}</select></div>
-        <div><label class="order-label">Nhân viên xử lý <span class="text-rose-500">*</span></label><select id="of-assignee" required class="order-input">${staffOpts}</select></div>
+        <div><label class="order-label">Loại hồ sơ <span class="text-rose-500">*</span></label><select id="of-type" required class="order-input" onchange="orderOnDocTypeChange(this.value)">${orderOptions(ORDER_DOC_TYPES, o.docType, '-- Chọn loại hồ sơ --')}</select></div>
+        <div>
+          <label class="order-label">Nhân viên xử lý <span class="text-rose-500">*</span></label>
+          <select id="of-assignee" required class="order-input">${staffOpts}</select>
+          <p id="of-auto-assignee-hint" class="${isOanhDefault && oanhStaff ? '' : 'hidden '}text-[11px] font-semibold text-brand-700 mt-1">✨ Mặc định chuyển trực tiếp tới: ${oanhStaff ? escapeHtml(oanhStaff.name || oanhStaff.email) : 'Oanh'}</p>
+        </div>
         <div><label class="order-label">Chi phí dự kiến (VND)</label><div class="relative"><input id="of-cost" inputmode="numeric" class="order-input pr-12" value="${orderFormatMoney(o.cost || 0)}" oninput="this.value=orderFormatMoney(this.value)" /><span class="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">VND</span></div></div>
         <div><label class="order-label">Mức độ ưu tiên</label>
           <div class="flex gap-2">${Object.entries(ORDER_PRIORITY).map(([k, m]) => `
@@ -5854,6 +5950,7 @@ async function orderSubmit(e) {
   }
   await orderPersist(order);
   const wasEdit = !!orderEditingId;
+  orderSendNotifyEmail(order, wasEdit);
   orderEditingId = null;
   orderShowSuccess(order, wasEdit);
 }
@@ -6014,6 +6111,48 @@ function orderOpenDrawer(id, mode) {
       <span>Hồ sơ đã tiếp nhận xử lý bởi <b>${escapeHtml(o.assigneeName)}</b> (khóa chuyển giao giữa chừng).</span>
     </div>` : '');
 
+  // Phần đánh giá sao của người gửi (không bắt buộc, hiển thị khi hồ sơ Hoàn tất)
+  let ratingSection = '';
+  if (o.status === 'done') {
+    const curRate = Number(o.senderRating) || 0;
+    const curComment = o.senderFeedback || '';
+    if (mode === 'sender') {
+      const starsHtml = [1, 2, 3, 4, 5].map(st => `
+        <button type="button" onclick="orderPickStar(${st})" data-star="${st}" class="order-star-btn p-1 transition-transform hover:scale-125 focus:outline-none">
+          <svg class="w-7 h-7 ${st <= curRate ? 'text-amber-400 fill-amber-400' : 'text-slate-300 fill-slate-100'}" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+          </svg>
+        </button>`).join('');
+      ratingSection = `
+      <div class="order-card p-4 border-amber-200 bg-amber-50/40">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <div class="text-[11px] uppercase tracking-wider text-amber-800 font-bold flex items-center gap-1.5">⭐ Đánh giá chất lượng xử lý</div>
+          <span class="text-[10px] text-slate-400 font-medium">(Không bắt buộc)</span>
+        </div>
+        <p class="text-[11px] text-slate-500 mb-2">Ý kiến khách quan của bạn giúp Bộ phận Pháp chế & Quản lý cải thiện chất lượng phục vụ.</p>
+        <input type="hidden" id="order-rating-val" value="${curRate}" />
+        <div class="flex items-center gap-1 mb-2.5" id="order-stars-wrap">${starsHtml}</div>
+        <textarea id="order-rating-note" rows="2" class="order-input text-xs" placeholder="Nhận xét thêm về tiến độ, thái độ hỗ trợ (tùy chọn)...">${escapeHtml(curComment)}</textarea>
+        <div class="flex justify-end mt-2.5">
+          <button type="button" onclick="orderSaveSenderRating('${o.id}')" class="order-btn-primary order-btn-xs bg-amber-600 hover:bg-amber-700 border-amber-600">
+            <i data-lucide="star" class="w-3.5 h-3.5"></i>${curRate ? 'Cập nhật đánh giá' : 'Gửi đánh giá'}
+          </button>
+        </div>
+      </div>`;
+    } else if (curRate > 0) {
+      const starsView = [1, 2, 3, 4, 5].map(st => `<span class="${st <= curRate ? 'text-amber-400' : 'text-slate-300'} text-base leading-none">★</span>`).join('');
+      ratingSection = `
+      <div class="order-card p-4 border-amber-200 bg-amber-50/50">
+        <div class="flex items-center justify-between">
+          <div class="text-[10px] uppercase tracking-wider text-amber-800 font-bold">⭐ Đánh giá từ người gửi (${escapeHtml(o.senderName)})</div>
+          <span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-extrabold">${curRate} / 5 ★</span>
+        </div>
+        <div class="flex items-center gap-1 mt-1">${starsView}</div>
+        ${curComment ? `<div class="mt-2 text-xs text-slate-700 bg-white border border-amber-100 rounded-lg px-2.5 py-2 italic">“${escapeHtml(curComment)}”</div>` : ''}
+      </div>`;
+    }
+  }
+
   drawer.innerHTML = `
   <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" onclick="orderCloseDrawer()"></div>
   <aside class="order-drawer-panel">
@@ -6024,6 +6163,7 @@ function orderOpenDrawer(id, mode) {
     <div class="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50">
       <div class="flex flex-wrap items-center gap-2">${orderBadge(o.status, 'lg')} ${orderDeadlineInfo(o) ? `<span class="px-2 py-0.5 rounded-full border text-[11px] font-bold ${orderDeadlineInfo(o).cls}">${orderDeadlineInfo(o).text}</span>` : ''}</div>
       ${stepper}
+      ${ratingSection}
       <div class="order-card p-4"><div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1">Nội dung hồ sơ</div><div class="text-sm text-slate-800 whitespace-pre-line">${escapeHtml(o.content)}</div>
         ${o.note ? `<div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mt-3 mb-1">Ghi chú</div><div class="text-xs text-slate-600 whitespace-pre-line break-words">${escapeHtml(o.note)}</div>` : ''}
         ${links.length ? `<div class="flex flex-wrap gap-1.5 mt-2">${links.map(l => `<a href="${escapeHtml(l)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-semibold hover:bg-blue-100 max-w-full"><i data-lucide="${orderLinkIcon(l)}" class="w-3 h-3 shrink-0"></i><span class="truncate max-w-[220px]">${escapeHtml(l.replace(/^https?:\/\//, ''))}</span></a>`).join('')}</div>` : ''}
@@ -6051,6 +6191,37 @@ function orderRefreshDrawer() {
     orderOpenDrawer(drawer.dataset.orderId, drawer.dataset.mode);
     const el = drawer.querySelector('.overflow-y-auto'); if (el) el.scrollTop = scroll;
   }
+}
+
+function orderPickStar(stars) {
+  const inp = document.getElementById('order-rating-val');
+  if (inp) inp.value = stars;
+  document.querySelectorAll('#order-stars-wrap .order-star-btn svg').forEach((svg, idx) => {
+    if (idx + 1 <= stars) {
+      svg.classList.remove('text-slate-300', 'fill-slate-100');
+      svg.classList.add('text-amber-400', 'fill-amber-400');
+    } else {
+      svg.classList.remove('text-amber-400', 'fill-amber-400');
+      svg.classList.add('text-slate-300', 'fill-slate-100');
+    }
+  });
+}
+
+async function orderSaveSenderRating(orderId) {
+  const o = orderList.find(x => x.id === orderId);
+  if (!o) return;
+  const rating = Number(document.getElementById('order-rating-val')?.value || 0);
+  const feedback = (document.getElementById('order-rating-note')?.value || '').trim();
+  if (!rating || rating < 1 || rating > 5) {
+    showToast('Vui lòng chọn số sao (1 đến 5 sao) trước khi gửi!', 'info');
+    return;
+  }
+  o.senderRating = rating;
+  o.senderFeedback = feedback;
+  o.senderRatedAt = orderNowISO();
+  await orderPersist(o);
+  orderRerender();
+  showToast(`Cảm ơn bạn đã đánh giá ${rating} ★ cho hồ sơ ${o.code}!`, 'success');
 }
 
 // ---------- Người xử lý: thao tác ----------
@@ -6162,7 +6333,7 @@ function orderBuildTask(o) {
     id: 'task_ord_' + Date.now(), code: o.code,
     title: `[Order] ${o.docType}: ${String(o.content).slice(0, 90)}`,
     client: `${o.senderName} – ${o.department}`,
-    category: 'Giải quyết các yêu cầu phát sinh',
+    category: o.docType || 'Giải quyết các yêu cầu phát sinh',
     priority: o.priority || 'medium',
     assignedDate: orderTodayStr(), deadline: o.deadline,
     assignee: o.assigneeEmail, status: 'in_progress', progress: ORDER_STATUSES.received.progress,
@@ -6245,6 +6416,9 @@ function orderRenderInbox(containerId = 'orders-inbox-root', isDemo = false) {
     { label: 'Hoàn tất', val: c('done'), icon: 'badge-check', cls: 'from-emerald-500 to-teal-600' },
     { label: 'Quá hạn', val: overdue, icon: 'alarm-clock', cls: 'from-slate-600 to-slate-800' }
   ];
+  const rated = src.filter(o => Number(o.senderRating) > 0);
+  const avgSatisfaction = rated.length ? (rated.reduce((s, x) => s + Number(x.senderRating), 0) / rated.length).toFixed(1) : null;
+  const satisfactionBadge = avgSatisfaction ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">⭐ Hài lòng: ${avgSatisfaction}/5 (${rated.length} lượt)</span>` : '';
   const scopeToggle = (!isDemo && isManager(currentUser)) ? `
     <div class="inline-flex bg-slate-100 rounded-xl p-1 text-xs">
       <button onclick="orderSetInboxFilter('scope','all')" class="px-3 py-1.5 rounded-lg font-bold ${orderInboxFilters.scope === 'all' ? 'bg-white shadow text-brand-700' : 'text-slate-500'}">Toàn team</button>
@@ -6254,7 +6428,7 @@ function orderRenderInbox(containerId = 'orders-inbox-root', isDemo = false) {
     <div class="order-card p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
       <div class="flex items-center gap-3"><div class="w-11 h-11 rounded-2xl crimson-card-header flex items-center justify-center shadow"><i data-lucide="mail-open" class="w-5 h-5"></i></div>
         <div><div class="font-extrabold text-slate-800">Hộp Tiếp Nhận Hồ Sơ</div><div class="text-[11px] text-slate-500">Yêu cầu từ các phòng ban gửi tới — kéo thả thẻ để đổi trạng thái</div></div></div>
-      <div class="flex flex-wrap items-center gap-2">${scopeToggle}
+      <div class="flex flex-wrap items-center gap-2">${satisfactionBadge}${scopeToggle}
         <button onclick="orderCopyPortalLink()" class="order-btn-ghost order-btn-xs"><i data-lucide="link" class="w-3.5 h-3.5"></i>Copy link Cổng Tiếp Nhận</button>
         ${!isDemo ? `<button onclick="location.hash='order'" class="order-btn-primary order-btn-xs"><i data-lucide="external-link" class="w-3.5 h-3.5"></i>Mở Cổng Tiếp Nhận</button>` : ''}
       </div>
@@ -6277,8 +6451,9 @@ function orderRenderInbox(containerId = 'orders-inbox-root', isDemo = false) {
 
 function orderKanbanCard(o) {
   const dl = orderDeadlineInfo(o);
+  const starBadge = Number(o.senderRating) > 0 ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-bold">★ ${o.senderRating}/5</span>` : '';
   return `<div class="order-kcard" draggable="true" ondragstart="orderDragId='${o.id}';this.classList.add('dragging')" ondragend="this.classList.remove('dragging')" onclick="orderOpenDrawer('${o.id}','handler')">
-    <div class="flex items-center justify-between gap-2"><span class="text-[11px] font-extrabold text-brand-700">${escapeHtml(o.code)}</span>${orderPriorityChip(o.priority)}</div>
+    <div class="flex items-center justify-between gap-2"><span class="text-[11px] font-extrabold text-brand-700">${escapeHtml(o.code)}</span><div class="flex items-center gap-1">${starBadge}${orderPriorityChip(o.priority)}</div></div>
     <div class="text-xs font-semibold text-slate-800 mt-1.5 line-clamp-3">${escapeHtml(o.content)}</div>
     <div class="flex flex-wrap gap-1 mt-2"><span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">${escapeHtml(o.docType)}</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">${escapeHtml(o.department)}</span></div>
     <div class="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-100">
@@ -6341,6 +6516,165 @@ function orderRerender() {
   orderRefreshDrawer();
 }
 
+// ---------- POPUP CẢNH BÁO ĐỎ HỒ SƠ GẦN ĐẾN HẠN (TRƯỚC 1 NGÀY) ----------
+function parseLocalYMD(ymd) {
+  if (!ymd || typeof ymd !== 'string') return null;
+  const parts = ymd.slice(0, 10).split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return null;
+  return new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+}
+
+function getUrgentDeadlineItems() {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const items = [];
+  const seenCodes = new Set();
+  const me = (currentUser?.email || '').toLowerCase();
+  const mgr = typeof isManager === 'function' && isManager(currentUser);
+
+  const checkTasks = (tasks, ownerLabel) => {
+    (tasks || []).forEach(t => {
+      if (!t || t.status === 'completed' || !t.deadline) return;
+      const dl = parseLocalYMD(t.deadline);
+      if (!dl) return;
+      const diffDays = Math.round((dl - today) / 86400000);
+      if (diffDays <= 1) {
+        if (t.code) seenCodes.add(t.code);
+        items.push({
+          kind: 'task',
+          id: t.id,
+          code: t.code || 'HS',
+          title: t.title || 'Hồ sơ chưa đặt tên',
+          owner: ownerLabel || t.assignee || '',
+          deadline: t.deadline,
+          diffDays
+        });
+      }
+    });
+  };
+
+  if (mgr && typeof teamWorkspaces === 'object') {
+    Object.values(teamWorkspaces).forEach(ws => {
+      if (ws && Array.isArray(ws.tasks)) {
+        checkTasks(ws.tasks, ws.ownerName || ws.ownerEmail);
+      }
+    });
+  } else if (workspaceData && Array.isArray(workspaceData.tasks)) {
+    checkTasks(workspaceData.tasks, workspaceData.ownerName || me);
+  }
+
+  (orderList || []).forEach(o => {
+    if (!o || ['done', 'rejected'].includes(o.status) || !o.deadline) return;
+    if (seenCodes.has(o.code)) return;
+    if (!mgr && (o.assigneeEmail || '').toLowerCase() !== me) return;
+    const dl = parseLocalYMD(o.deadline);
+    if (!dl) return;
+    const diffDays = Math.round((dl - today) / 86400000);
+    if (diffDays <= 1) {
+      items.push({
+        kind: 'order',
+        id: o.id,
+        code: o.code,
+        title: `[Order] ${o.docType}: ${String(o.content || '').slice(0, 80)}`,
+        owner: o.assigneeName || o.assigneeEmail,
+        deadline: o.deadline,
+        diffDays
+      });
+    }
+  });
+
+  items.sort((a, b) => a.diffDays - b.diffDays);
+  return items;
+}
+
+function closeRedDeadlineAlert() {
+  const modal = document.getElementById('red-deadline-alert-modal');
+  if (modal) modal.remove();
+}
+
+function openUrgentItem(kind, id) {
+  closeRedDeadlineAlert();
+  if (kind === 'order') {
+    if (typeof switchTab === 'function') switchTab('orders');
+    setTimeout(() => { if (typeof orderOpenDrawer === 'function') orderOpenDrawer(id, 'handler'); }, 120);
+  } else {
+    if (typeof switchTab === 'function') switchTab('dossiers');
+  }
+}
+
+function checkAndShowRedDeadlineAlert(forceShow = false) {
+  if (location.hash === '#order') return;
+  if (!isUserAuthenticatedSession()) return;
+  const items = getUrgentDeadlineItems();
+  if (!items.length) {
+    if (forceShow) showToast('✅ Không có hồ sơ nào gần đến hạn (trước 1 ngày) hoặc quá hạn!', 'success');
+    return;
+  }
+  if (!forceShow && window._redDeadlineAlertShown) return;
+  window._redDeadlineAlertShown = true;
+
+  closeRedDeadlineAlert();
+  const wrap = document.createElement('div');
+  wrap.id = 'red-deadline-alert-modal';
+  wrap.className = 'fixed inset-0 z-[150] flex items-center justify-center p-4 bg-red-950/60 backdrop-blur-sm animate-fade-in';
+
+  const rowsHtml = items.map(it => {
+    let badgeText = '';
+    let badgeCls = '';
+    if (it.diffDays < 0) {
+      badgeText = `QUÁ HẠN ${Math.abs(it.diffDays)} NGÀY`;
+      badgeCls = 'bg-red-700 text-white border-red-800';
+    } else if (it.diffDays === 0) {
+      badgeText = 'HẠN CHÓT HÔM NAY';
+      badgeCls = 'bg-red-600 text-white border-red-700 animate-pulse';
+    } else {
+      badgeText = 'CÒN 1 NGÀY (NGÀY MAI HẾT HẠN)';
+      badgeCls = 'bg-rose-100 text-red-700 border-red-300';
+    }
+    return `
+      <div class="p-3 rounded-xl bg-red-50/70 border border-red-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-red-50 transition">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="text-xs font-extrabold text-red-700">${escapeHtml(it.code)}</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${badgeCls}">${badgeText}</span>
+          </div>
+          <div class="text-xs font-bold text-slate-800 mt-1 line-clamp-2">${escapeHtml(it.title)}</div>
+          <div class="text-[11px] text-slate-500 mt-0.5">Hạn chót: <b class="text-red-700">${formatVNDate(it.deadline)}</b> ${it.owner ? `• Phụ trách: <b>${escapeHtml(it.owner)}</b>` : ''}</div>
+        </div>
+        <button type="button" onclick="openUrgentItem('${it.kind}', '${escapeHtml(it.id)}')" class="shrink-0 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition cursor-pointer">
+          Mở xử lý →
+        </button>
+      </div>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="bg-white rounded-3xl shadow-2xl border-2 border-red-500 w-full max-w-2xl overflow-hidden animate-fade-in">
+      <div class="bg-gradient-to-r from-red-700 via-red-600 to-rose-600 text-white px-6 py-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-white/20 border border-white/30 flex items-center justify-center shrink-0 animate-bounce">
+            <i data-lucide="siren" class="w-6 h-6 text-white"></i>
+          </div>
+          <div>
+            <h3 class="text-base sm:text-lg font-black uppercase tracking-wide">CẢNH BÁO ĐỎ: HỒ SƠ GẦN ĐẾN HẠN</h3>
+            <p class="text-xs text-red-100 mt-0.5">Phát hiện <b>${items.length}</b> hồ sơ chỉ còn tối đa 1 ngày (hoặc quá hạn) chưa hoàn thành!</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeRedDeadlineAlert()" class="p-2 rounded-xl hover:bg-white/20 transition"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div class="p-5 max-h-[60vh] overflow-y-auto space-y-2.5 bg-white">
+        ${rowsHtml}
+      </div>
+      <div class="px-6 py-3.5 bg-red-50 border-t border-red-100 flex items-center justify-between gap-3">
+        <span class="text-[11px] text-red-700 font-semibold">⚠️ Vui lòng ưu tiên hoàn thiện các hồ sơ trên đúng thời hạn.</span>
+        <button type="button" onclick="closeRedDeadlineAlert()" class="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold shadow transition cursor-pointer">
+          Đã nắm thông tin
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
 // ---------- Tích hợp với app chính ----------
 function orderHandleHash() {
   if (location.hash === '#order') orderOpenPortal();
@@ -6351,11 +6685,16 @@ window.addEventListener('DOMContentLoaded', () => {
   if (isUserAuthenticatedSession()) {
     orderLoadStaff();
     orderSubscribe('handler');
+    setTimeout(() => checkAndShowRedDeadlineAlert(false), 1200);
   }
 });
-// Sau khi đăng nhập app chính bằng OTP → tự kết nối Hộp Order
+// Sau khi đăng nhập app chính bằng OTP → tự kết nối Hộp Order & kiểm tra Cảnh báo Đỏ
 const _orderOrigVerifyOTP = handleVerifyOTP;
 handleVerifyOTP = async function (e) {
   await _orderOrigVerifyOTP(e);
-  if (isUserAuthenticatedSession()) { orderLoadStaff(); orderSubscribe('handler'); }
+  if (isUserAuthenticatedSession()) {
+    orderLoadStaff();
+    orderSubscribe('handler');
+    setTimeout(() => checkAndShowRedDeadlineAlert(false), 1000);
+  }
 };

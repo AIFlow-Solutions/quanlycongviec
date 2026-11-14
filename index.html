@@ -64,6 +64,10 @@
         <i data-lucide="shield" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
         <span id="top-bar-role-text" class="text-[11px] sm:text-xs">Nhân viên</span>
       </span>
+      <button type="button" onclick="checkAndShowRedDeadlineAlert(true)" class="bg-red-500/25 hover:bg-red-500/40 border border-red-300/40 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-bold flex items-center space-x-1 transition shadow-sm" title="Kiểm tra cảnh báo Đỏ hồ sơ gần đến hạn (trước 1 ngày)">
+        <i data-lucide="siren" class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-200 shrink-0"></i>
+        <span class="hidden sm:inline text-[11px] sm:text-xs">Hồ sơ gấp</span>
+      </button>
       <button id="top-bar-sync-btn" onclick="syncLoadFromCloud(false)" class="hidden bg-white/15 hover:bg-white/25 border border-white/30 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="Bấm để đồng bộ dữ liệu mới nhất từ Cloud ngay lập tức">
         <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-300 shrink-0"></i>
         <span id="top-bar-sync-text" class="text-[11px] sm:text-xs">Đồng bộ Cloud</span>
@@ -1691,6 +1695,22 @@ function doPost(e) {
         });
       }
       return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "send_otp" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 1B. GỬI EMAIL THÔNG BÁO KHI CÓ ORDER HỒ SƠ MỚI
+    if (data.action === "send_order_notify") {
+      var notifyTo = data.recipient || data.email || "";
+      if (notifyTo && data.subject && data.htmlBody) {
+        MailApp.sendEmail({
+          to: notifyTo,
+          name: "Cổng Tiếp Nhận Hồ Sơ - Pháp Chế (No-Reply)",
+          noReply: true,
+          subject: data.subject,
+          htmlBody: data.htmlBody
+        });
+      }
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, action: "send_order_notify" }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
