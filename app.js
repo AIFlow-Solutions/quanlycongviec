@@ -3213,7 +3213,7 @@ function renderJournalTab() {
         if (log.type === 'login') {
           return (log.actor || '').trim().toLowerCase() === empEmail;
         }
-        if (log.type === 'reviewed') return true;
+        if (log.type === 'reviewed' || log.type === 'order_cancelled') return true;
         const act = (log.actor || '').trim().toLowerCase();
         return !act || act === empEmail;
       });
@@ -3249,6 +3249,7 @@ function renderJournalTab() {
     updated: { badge: '✏️ Chỉnh sửa / Cập nhật', color: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-600' },
     completed: { badge: '✅ Đã hoàn thành', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-[#198754]' },
     deleted: { badge: '🗑️ Xóa dữ liệu', color: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-600' },
+    order_cancelled: { badge: '🚫 Hủy / Từ chối Order', color: 'bg-rose-100 text-rose-800 border-rose-300', dot: 'bg-rose-600' },
     reviewed: { badge: '⭐ Quản lý đánh giá', color: 'bg-blue-50 text-blue-800 border-blue-200', dot: 'bg-blue-600' },
     note: { badge: '📝 Nhật ký hàng ngày', color: 'bg-indigo-50 text-indigo-700 border-indigo-200', dot: 'bg-indigo-500' }
   };
@@ -3790,13 +3791,15 @@ function renderTeamTab() {
         }
 
         if (typeFilter === 'dossier') {
-          if (!['created', 'updated', 'completed', 'deleted'].includes(log.type)) return;
+          if (!['created', 'updated', 'completed', 'deleted', 'order_cancelled'].includes(log.type)) return;
         } else if (typeFilter === 'adhoc') {
           if (!['boss_task', 'personal_task', 'note'].includes(log.type)) return;
         } else if (typeFilter === 'reviewed') {
           if (log.type !== 'reviewed') return;
         } else if (typeFilter === 'login') {
           if (log.type !== 'login') return;
+        } else if (typeFilter === 'order_cancelled') {
+          if (log.type !== 'order_cancelled') return;
         }
 
         if (searchVal) {
@@ -3827,6 +3830,7 @@ function renderTeamTab() {
         updated: { badge: '✏️ Đang xử lý / Sửa', color: 'bg-blue-50 text-blue-700 border-blue-200' },
         completed: { badge: '✅ Hoàn thành', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
         deleted: { badge: '🗑️ Xóa mục', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+        order_cancelled: { badge: '🚫 Hủy / Từ chối Order', color: 'bg-rose-100 text-rose-800 border-rose-300' },
         reviewed: { badge: '⭐ Quản lý chấm', color: 'bg-blue-50 text-blue-800 border-blue-200' },
         note: { badge: '📝 Ghi chú nhật ký', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
       };
@@ -5863,6 +5867,158 @@ async function orderSendNotifyEmail(order, isEdit) {
   }
 }
 
+async function orderSendCancelNotifyEmail(order, reason, isSender) {
+  const webhookUrl = typeof getOTPWebhookUrl === 'function' ? getOTPWebhookUrl() : '';
+  if (!webhookUrl || !order || ORDER_DEMO_MODE) return false;
+  try {
+    const portalLink = `${window.location.origin}${window.location.pathname}#order`;
+    const deskLink = `${window.location.origin}${window.location.pathname}`;
+    const nowStr = formatVNDateTime(new Date());
+
+    let recipient = '';
+    let subject = '';
+    let htmlBody = '';
+
+    if (isSender) {
+      recipient = order.assigneeEmail;
+      subject = `[Hệ Thống Pháp Chế] ĐÃ HỦY Order hồ sơ ${order.code}: ${order.docType}`;
+      htmlBody = `
+        <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:580px;margin:0 auto;border:1px solid #fecdd3;border-radius:14px;overflow:hidden;">
+          <div style="background:#be123c;color:#ffffff;padding:18px 24px;">
+            <div style="font-size:12px;opacity:0.9;text-transform:uppercase;letter-spacing:1px;">VA Schools • Bộ Phận Pháp Chế</div>
+            <h2 style="margin:4px 0 0;font-size:18px;">⚠️ Người gửi đã Yêu cầu Hủy Order hồ sơ</h2>
+          </div>
+          <div style="padding:20px 24px;color:#1e293b;font-size:14px;line-height:1.6;">
+            <p>Xin chào <strong>${escapeHtml(order.assigneeName || order.assigneeEmail)}</strong>,</p>
+            <p>Người gửi <strong>${escapeHtml(order.senderName)}</strong> (${escapeHtml(order.department)}) vừa thực hiện <strong style="color:#be123c;">HỦY YÊU CẦU</strong> hồ sơ sau trên Cổng Tiếp Nhận:</p>
+            <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:13px;">
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#f8fafc;width:36%;"><strong>Mã hồ sơ</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;color:#be123c;font-weight:bold;">${escapeHtml(order.code)}</td></tr>
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Loại hồ sơ</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;">${escapeHtml(order.docType)}</td></tr>
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Người gửi</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;">${escapeHtml(order.senderName)} (${escapeHtml(order.senderEmail)})</td></tr>
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Đơn vị</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;">${escapeHtml(order.department)}</td></tr>
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Thời gian hủy</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;">${nowStr}</td></tr>
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#fef2f2;"><strong>Lý do hủy</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;color:#be123c;font-weight:bold;background:#fef2f2;">${escapeHtml(reason)}</td></tr>
+            </table>
+            <div style="padding:12px 14px;background:#fef2f2;border-left:4px solid #be123c;border-radius:6px;font-size:13px;color:#9f1239;margin:14px 0;">
+              📌 <strong>Lưu ý:</strong> Hồ sơ này đã được chuyển sang trạng thái <strong>Đã hủy</strong> và tự động lưu vết vào Sổ Nhật ký hoạt động của bạn & cấp Quản lý. Bạn không cần tiếp nhận hoặc xử lý hồ sơ này nữa.
+            </div>
+            <p style="margin-top:16px;"><a href="${deskLink}" style="display:inline-block;background:#be123c;color:#fff;text-decoration:none;padding:9px 18px;border-radius:8px;font-weight:bold;font-size:13px;">Mở Bàn Làm Việc Kiểm Tra</a></p>
+          </div>
+        </div>`;
+    } else {
+      recipient = order.senderEmail;
+      subject = `[Hệ Thống Pháp Chế] THÔNG BÁO TỪ CHỐI / HỦY Order hồ sơ ${order.code}: ${order.docType}`;
+      htmlBody = `
+        <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:580px;margin:0 auto;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+          <div style="background:#9e0b22;color:#ffffff;padding:18px 24px;">
+            <div style="font-size:12px;opacity:0.9;text-transform:uppercase;letter-spacing:1px;">VA Schools • Bộ Phận Pháp Chế</div>
+            <h2 style="margin:4px 0 0;font-size:18px;">Thông Báo Từ Chối / Chưa Tiếp Nhận Hồ Sơ</h2>
+          </div>
+          <div style="padding:20px 24px;color:#1e293b;font-size:14px;line-height:1.6;">
+            <p>Xin chào <strong>${escapeHtml(order.senderName)}</strong>,</p>
+            <p>Bộ phận Pháp chế xin thông báo về yêu cầu hồ sơ <strong>${escapeHtml(order.code)}</strong> của bạn:</p>
+            <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:13px;">
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#f8fafc;width:36%;"><strong>Mã hồ sơ</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;color:#9e0b22;font-weight:bold;">${escapeHtml(order.code)}</td></tr>
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Loại hồ sơ</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;">${escapeHtml(order.docType)}</td></tr>
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#f8fafc;"><strong>Người phản hồi</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;">${escapeHtml(orderActorName())}</td></tr>
+              <tr><td style="padding:7px 10px;border:1px solid #e2e8f0;background:#fef2f2;"><strong>Lý do từ chối / hủy</strong></td><td style="padding:7px 10px;border:1px solid #e2e8f0;color:#be123c;font-weight:bold;background:#fef2f2;">${escapeHtml(reason)}</td></tr>
+            </table>
+            <p>Nếu bạn cần bổ sung hồ sơ hoặc gửi lại yêu cầu khác, vui lòng truy cập:</p>
+            <p><a href="${portalLink}" style="display:inline-block;background:#9e0b22;color:#fff;text-decoration:none;padding:9px 18px;border-radius:8px;font-weight:bold;font-size:13px;">Đăng Nhập Cổng Tiếp Nhận</a></p>
+          </div>
+        </div>`;
+    }
+
+    if (!recipient) return false;
+
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'send_order_notify',
+        recipient,
+        email: recipient,
+        subject,
+        htmlBody,
+        orderCode: order.code,
+        cancelReason: reason,
+        isCancel: true
+      })
+    });
+    return true;
+  } catch (e) {
+    console.warn('Send cancel notify email error:', e);
+    return false;
+  }
+}
+
+async function orderRecordCancelJournal(order, reason, actorName, actorEmail, isSender) {
+  const now = new Date();
+  const nowISO = now.toISOString();
+  const dateStr = toISODateString(now);
+  const logCode = order.code || 'ORD';
+  const logTitle = isSender
+    ? `🚫 Người gửi hủy Order: ${order.docType || 'Hồ sơ'}`
+    : `🚫 Từ chối / Hủy Order: ${order.docType || 'Hồ sơ'}`;
+  const logDetail = `Người thực hiện: ${actorName} (${actorEmail}) • Lúc: ${formatVNDateTime(nowISO)} • Người gửi: ${order.senderName} (${order.department || 'Bộ phận'}) • Phụ trách: ${order.assigneeName} • Lý do: ${reason}`;
+
+  const entry = {
+    id: 'log_ord_cancel_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    timestamp: nowISO,
+    dateStr,
+    type: 'order_cancelled',
+    code: logCode,
+    title: logTitle,
+    detail: logDetail,
+    actor: `${actorName} (${actorEmail})`
+  };
+
+  // 1. Cập nhật vào workspaceData nếu có
+  if (typeof workspaceData === 'object' && workspaceData) {
+    if (!Array.isArray(workspaceData.activityLogs)) workspaceData.activityLogs = [];
+    workspaceData.activityLogs.unshift(entry);
+    if (typeof activeEmployeeId !== 'undefined' && activeEmployeeId && activeEmployeeId !== 'all') {
+      if (typeof teamWorkspaces === 'object' && teamWorkspaces[activeEmployeeId]) {
+        teamWorkspaces[activeEmployeeId] = workspaceData;
+      }
+    }
+  }
+
+  // 2. Tìm không gian của nhân viên phụ trách trong teamWorkspaces
+  const assigneeClean = (order.assigneeEmail || '').trim().toLowerCase();
+  if (typeof teamWorkspaces === 'object' && teamWorkspaces) {
+    Object.values(teamWorkspaces).forEach(ws => {
+      if (ws && (ws.ownerEmail || '').trim().toLowerCase() === assigneeClean) {
+        if (!Array.isArray(ws.activityLogs)) ws.activityLogs = [];
+        if (!ws.activityLogs.some(l => l.id === entry.id)) {
+          ws.activityLogs.unshift(entry);
+        }
+      }
+    });
+  }
+
+  // 3. Đồng bộ lên Firestore wf_employees cho nhân viên phụ trách (nếu có kết nối Firebase)
+  if (typeof fbDb !== 'undefined' && fbDb && !orderUseLocal && assigneeClean) {
+    try {
+      const docRef = fbDb.collection('wf_employees').doc(assigneeClean);
+      const snap = await docRef.get();
+      if (snap.exists) {
+        const data = snap.data() || {};
+        const logs = Array.isArray(data.activityLogs) ? data.activityLogs : [];
+        logs.unshift(entry);
+        await docRef.set({ activityLogs: logs, updatedAt: nowISO }, { merge: true });
+      }
+    } catch (fsErr) {
+      console.warn('Firestore cancel log sync warning:', fsErr);
+    }
+  }
+
+  // 4. Lưu lại local
+  try {
+    if (typeof saveWorkspaceData === 'function') saveWorkspaceData();
+  } catch (e) { /* noop */ }
+}
+
 function orderFormHTML() {
   const o = orderEditingId ? (orderList.find(x => x.id === orderEditingId) || {}) : {};
   const u = orderPortalUser || {};
@@ -6039,13 +6195,30 @@ function orderMyListBodyHTML() {
 async function orderSenderCancel(id) {
   const o = orderList.find(x => x.id === id);
   if (!o || o.status !== 'pending') return;
-  const note = await orderAskNote('Hủy Order ' + o.code, 'Lý do hủy (không bắt buộc)', false);
-  if (note === null) return;
+  const note = await orderAskNote(
+    'Hủy Order ' + o.code,
+    'Vui lòng nhập lý do hủy hồ sơ (Bắt buộc để lưu nhật ký hệ thống & thông báo cho người phụ trách)',
+    true
+  );
+  if (!note) return;
   o.status = 'rejected';
-  o.history = (o.history || []).concat([{ status: 'rejected', by: o.senderName, byEmail: o.senderEmail, at: orderNowISO(), note: note ? 'Người gửi hủy: ' + note : 'Người gửi đã tự hủy Order' }]);
+  o.cancelReason = note;
+  o.cancelledBy = o.senderName;
+  o.cancelledByEmail = o.senderEmail;
+  o.cancelledAt = orderNowISO();
+  o.history = (o.history || []).concat([{
+    status: 'rejected',
+    by: o.senderName,
+    byEmail: o.senderEmail,
+    at: orderNowISO(),
+    note: 'Người gửi hủy hồ sơ: ' + note
+  }]);
   await orderPersist(o);
+  await orderRecordCancelJournal(o, note, o.senderName, o.senderEmail, true);
+  orderSendCancelNotifyEmail(o, note, true);
   orderCloseDrawer();
-  showToast('Đã hủy Order ' + o.code, 'info');
+  orderRerender();
+  showToast(`Đã hủy Order ${o.code} và ghi nhận nhật ký hệ thống. Đã gửi thông báo cho ${o.assigneeName}.`, 'info');
 }
 function orderSenderEdit(id) {
   orderCloseDrawer();
@@ -6061,8 +6234,27 @@ function orderOpenDrawer(id, mode) {
   const m = orderStatusMeta(o.status);
   const links = orderExtractLinks(o.note);
   const curStep = o.status === 'revise' ? 2 : m.step;
+  const cancelActor = o.cancelledBy || (o.history && o.history.slice().reverse().find(h => h.status === 'rejected')?.by) || 'Người dùng';
+  const cancelTime = o.cancelledAt || (o.history && o.history.slice().reverse().find(h => h.status === 'rejected')?.at);
+  const cancelText = o.cancelReason || (o.history && o.history.slice().reverse().find(h => h.status === 'rejected')?.note) || '';
   const stepper = o.status === 'rejected'
-    ? `<div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2"><i data-lucide="x-circle" class="w-4 h-4"></i>Order đã bị từ chối / hủy</div>`
+    ? `<div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-1.5 animate-fade-in">
+        <div class="font-extrabold flex items-center gap-1.5 text-rose-700 text-sm">
+          <i data-lucide="x-circle" class="w-4 h-4"></i>Hồ sơ đã bị Hủy / Từ chối tiếp nhận
+        </div>
+        <div class="text-[11px] text-slate-600">
+          Người thực hiện: <b>${escapeHtml(cancelActor)}</b>
+          ${cancelTime ? ` • Lúc: <b>${formatVNDateTime(cancelTime)}</b>` : ''}
+        </div>
+        ${cancelText ? `
+          <div class="mt-1 p-2.5 rounded-xl bg-white border border-rose-200 text-xs text-rose-900 leading-relaxed shadow-sm">
+            <span class="font-extrabold text-rose-700">📌 Lý do:</span> ${escapeHtml(cancelText)}
+          </div>
+        ` : ''}
+        <div class="text-[10px] text-slate-500 italic mt-1">
+          ✓ Thông tin hủy đã được tự động lưu vết vào Sổ Nhật ký hoạt động của Nhân viên & Quản lý.
+        </div>
+      </div>`
     : `<div class="order-stepper">${ORDER_STEPPER.map((s, i) => {
         const sm = ORDER_STATUSES[s];
         const state = i < curStep ? 'done' : i === curStep ? (o.status === 'revise' ? 'warn' : 'current') : '';
@@ -6257,6 +6449,14 @@ async function orderChangeStatus(id, to) {
   if (note === null) return;
   o.status = to;
   o.history = (o.history || []).concat([{ status: to, by: orderActorName(), byEmail: orderActorEmail(), at: orderNowISO(), note }]);
+  if (to === 'rejected') {
+    o.cancelReason = note;
+    o.cancelledBy = orderActorName();
+    o.cancelledByEmail = orderActorEmail();
+    o.cancelledAt = orderNowISO();
+    await orderRecordCancelJournal(o, note, orderActorName(), orderActorEmail(), false);
+    orderSendCancelNotifyEmail(o, note, false);
+  }
   if (to === 'received' && !o.linkedTaskId) orderCreateDossier(o);
   else orderSyncTask(o);
   await orderPersist(o);
@@ -6351,7 +6551,7 @@ function orderFindAssigneeWorkspace(email) {
 function orderSaveForeignWorkspace(ws) {
   if (!fbDb || orderUseLocal || !ws || !ws.ownerEmail) return;
   fbDb.collection('wf_employees').doc(ws.ownerEmail.trim().toLowerCase())
-    .set({ tasks: ws.tasks, updatedAt: orderNowISO() }, { merge: true })
+    .set({ tasks: ws.tasks, activityLogs: ws.activityLogs || [], updatedAt: orderNowISO() }, { merge: true })
     .catch(err => console.warn('Order → dossier sync warning:', err));
 }
 function orderCreateDossier(o) {
@@ -6362,10 +6562,22 @@ function orderCreateDossier(o) {
   target.ws.tasks = Array.isArray(target.ws.tasks) ? target.ws.tasks : [];
   target.ws.tasks.unshift(task);
   o.linkedTaskId = task.id;
+  const logDetail = `Tự động tạo từ Order của ${o.senderName} (${o.department}) • Deadline: ${formatVNDate(o.deadline)}`;
   if (target.own) {
-    recordJournalLog('created', task.code, task.title, `Tự động tạo từ Order của ${o.senderName} (${o.department}) • Deadline: ${formatVNDate(o.deadline)}`);
+    recordJournalLog('created', task.code, task.title, logDetail);
     saveWorkspaceData();
   } else {
+    if (!Array.isArray(target.ws.activityLogs)) target.ws.activityLogs = [];
+    target.ws.activityLogs.unshift({
+      id: 'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      timestamp: new Date().toISOString(),
+      dateStr: toISODateString(new Date()),
+      type: 'created',
+      code: task.code,
+      title: task.title,
+      detail: logDetail,
+      actor: currentUser?.email || currentUser?.name || o.assigneeName
+    });
     orderSaveForeignWorkspace(target.ws);
   }
   showToast(`📁 Đã tạo Hồ sơ ${task.code} trong bảng phân việc của ${o.assigneeName}`, 'success');
@@ -6379,13 +6591,37 @@ function orderSyncTask(o) {
   if (!t) return;
   const m = orderStatusMeta(o.status);
   t.progress = m.progress;
-  t.status = o.status === 'done' ? 'completed' : (o.status === 'rejected' ? 'pending' : 'in_progress');
-  t.completedAt = o.status === 'done' ? orderNowISO() : null;
+  if (o.status === 'done') {
+    t.status = 'completed';
+    t.completedAt = orderNowISO();
+  } else if (o.status === 'rejected') {
+    t.status = 'pending';
+    t.notes = (t.notes ? t.notes + '\n' : '') + `[ĐÃ HỦY ${formatVNDateTime(orderNowISO())}] Lý do: ${o.cancelReason || 'Order đã bị hủy'}`;
+  } else {
+    t.status = 'in_progress';
+  }
   t.updatedAt = orderNowISO();
+  const logType = o.status === 'done' ? 'completed' : (o.status === 'rejected' ? 'order_cancelled' : 'updated');
+  const logDetail = o.status === 'rejected'
+    ? `Order ${o.code} đã bị hủy/từ chối. Lý do: ${o.cancelReason || m.label}`
+    : `Order chuyển trạng thái: ${m.label}`;
   if (target.own) {
-    recordJournalLog(o.status === 'done' ? 'completed' : 'updated', t.code, t.title, `Order chuyển trạng thái: ${m.label}`);
+    recordJournalLog(logType, t.code, t.title, logDetail);
     saveWorkspaceData();
-  } else orderSaveForeignWorkspace(target.ws);
+  } else {
+    if (!Array.isArray(target.ws.activityLogs)) target.ws.activityLogs = [];
+    target.ws.activityLogs.unshift({
+      id: 'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      timestamp: new Date().toISOString(),
+      dateStr: toISODateString(new Date()),
+      type: logType,
+      code: t.code,
+      title: t.title,
+      detail: logDetail,
+      actor: currentUser?.email || currentUser?.name || o.assigneeName
+    });
+    orderSaveForeignWorkspace(target.ws);
+  }
 }
 
 // ---------- Hộp Order (Kanban / Bảng) ----------
@@ -6410,11 +6646,12 @@ function orderRenderInbox(containerId = 'orders-inbox-root', isDemo = false) {
   const c = s => src.filter(o => o.status === s).length;
   const overdue = src.filter(o => (orderDeadlineInfo(o) || {}).text === 'Quá hạn').length;
   const stats = [
-    { label: 'Chờ tiếp nhận', val: c('pending'), icon: 'bell-ring', cls: 'from-rose-500 to-brand-700', pulse: c('pending') > 0 },
-    { label: 'Đang xử lý', val: c('received') + c('reviewed'), icon: 'loader', cls: 'from-blue-500 to-indigo-600' },
-    { label: 'Chờ người gửi bổ sung', val: c('revise'), icon: 'alert-triangle', cls: 'from-amber-400 to-orange-500' },
-    { label: 'Hoàn tất', val: c('done'), icon: 'badge-check', cls: 'from-emerald-500 to-teal-600' },
-    { label: 'Quá hạn', val: overdue, icon: 'alarm-clock', cls: 'from-slate-600 to-slate-800' }
+    { label: 'Chờ tiếp nhận', val: c('pending'), icon: 'bell-ring', cls: 'from-rose-500 to-brand-700', pulse: c('pending') > 0, key: 'pending' },
+    { label: 'Đang xử lý', val: c('received') + c('reviewed'), icon: 'loader', cls: 'from-blue-500 to-indigo-600', key: 'in_progress' },
+    { label: 'Chờ bổ sung', val: c('revise'), icon: 'alert-triangle', cls: 'from-amber-400 to-orange-500', key: 'revise' },
+    { label: 'Hoàn tất', val: c('done'), icon: 'badge-check', cls: 'from-emerald-500 to-teal-600', key: 'done' },
+    { label: 'Quá hạn', val: overdue, icon: 'alarm-clock', cls: 'from-slate-600 to-slate-800', key: 'overdue' },
+    { label: 'Đã hủy / Từ chối', val: c('rejected'), icon: 'x-circle', cls: 'from-rose-600 to-rose-900', key: 'rejected' }
   ];
   const rated = src.filter(o => Number(o.senderRating) > 0);
   const avgSatisfaction = rated.length ? (rated.reduce((s, x) => s + Number(x.senderRating), 0) / rated.length).toFixed(1) : null;
@@ -6433,7 +6670,7 @@ function orderRenderInbox(containerId = 'orders-inbox-root', isDemo = false) {
         ${!isDemo ? `<button onclick="location.hash='order'" class="order-btn-primary order-btn-xs"><i data-lucide="external-link" class="w-3.5 h-3.5"></i>Mở Cổng Tiếp Nhận</button>` : ''}
       </div>
     </div>
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">${stats.map(s => `<div class="order-stat bg-gradient-to-br ${s.cls} ${s.pulse ? 'order-pulse' : ''}"><div><div class="text-[10px] uppercase tracking-wider opacity-80 font-semibold">${s.label}</div><div class="text-2xl font-extrabold mt-0.5">${s.val}</div></div><i data-lucide="${s.icon}" class="w-8 h-8 opacity-30"></i></div>`).join('')}</div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">${stats.map(s => `<div onclick="orderFilterByStat('${s.key}')" class="order-stat bg-gradient-to-br ${s.cls} ${s.pulse ? 'order-pulse' : ''} cursor-pointer hover:scale-[1.02] transition shadow-sm" title="Lọc theo ${s.label}"><div><div class="text-[10px] uppercase tracking-wider opacity-80 font-semibold">${s.label}</div><div class="text-2xl font-extrabold mt-0.5">${s.val}</div></div><i data-lucide="${s.icon}" class="w-8 h-8 opacity-30"></i></div>`).join('')}</div>
     <div class="flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
       <div class="flex flex-1 gap-2 flex-col sm:flex-row">
         <div class="relative flex-1 max-w-md"><i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i><input id="order-inbox-search" class="order-input pl-9" placeholder="Tìm mã, nội dung, người gửi, đơn vị..." value="${escapeHtml(orderInboxFilters.q)}" oninput="orderInboxFilters.q=this.value;clearTimeout(window._oiT);window._oiT=setTimeout(()=>{orderRerender();const el=document.getElementById('order-inbox-search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},250)" /></div>
@@ -6447,6 +6684,19 @@ function orderRenderInbox(containerId = 'orders-inbox-root', isDemo = false) {
     ${orderInboxView === 'kanban' ? orderKanbanHTML(list) : orderInboxTableHTML(list)}
   </div>`;
   orderIcons();
+}
+
+function orderFilterByStat(key) {
+  if (key === 'rejected') {
+    orderInboxFilters.status = 'rejected';
+    orderSetInboxView('table');
+  } else if (key === 'overdue' || key === 'in_progress') {
+    orderInboxFilters.status = '';
+    orderSetInboxView('table');
+  } else {
+    orderInboxFilters.status = (orderInboxFilters.status === key) ? '' : key;
+  }
+  orderRerender();
 }
 
 function orderKanbanCard(o) {
@@ -6470,21 +6720,37 @@ function orderKanbanHTML(list) {
       <div class="order-kcol-head border-${m.color}-400"><span class="flex items-center gap-1.5"><i data-lucide="${m.icon}" class="w-3.5 h-3.5 text-${m.color}-600"></i>${m.short}</span><span class="px-2 rounded-full bg-${m.color}-100 text-${m.color}-700 text-[10px] font-extrabold">${items.length}</span></div>
       <div class="space-y-2.5 min-h-[80px]">${items.map(orderKanbanCard).join('') || `<div class="text-[11px] text-slate-400 text-center py-6 border-2 border-dashed border-slate-200 rounded-xl">Kéo thả vào đây</div>`}</div>
     </div>`;
-  }).join('')}</div>${list.some(o => o.status === 'rejected') ? `<p class="text-[11px] text-slate-400">* ${list.filter(o => o.status === 'rejected').length} Order đã từ chối/hủy — xem ở chế độ Bảng.</p>` : ''}`;
+  }).join('')}</div>${list.some(o => o.status === 'rejected') ? `
+    <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex flex-wrap items-center justify-between gap-2 mt-3">
+      <div class="flex items-center gap-2">
+        <i data-lucide="info" class="w-4 h-4 text-rose-600 shrink-0"></i>
+        <span>Có <b>${list.filter(o => o.status === 'rejected').length}</b> Order đã bị Hủy hoặc Từ chối tiếp nhận (có lưu đầy đủ lý do & nhật ký).</span>
+      </div>
+      <button onclick="orderFilterByStat('rejected')" class="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm transition">
+        Xem chi tiết danh sách đã hủy →
+      </button>
+    </div>` : ''}`;
 }
 function orderInboxTableHTML(list) {
   if (!list.length) return `<div class="order-card py-14 text-center text-sm text-slate-500"><i data-lucide="inbox" class="w-10 h-10 mx-auto text-slate-300"></i><p class="mt-2">Chưa có Order nào.</p></div>`;
   return `<div class="order-card p-0 overflow-x-auto"><table class="w-full text-left min-w-[900px]">
     <thead><tr class="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200 bg-slate-50"><th class="px-4 py-3">Mã</th><th class="px-4 py-3">Người gửi</th><th class="px-4 py-3">Loại</th><th class="px-4 py-3">Nội dung</th><th class="px-4 py-3">Người xử lý</th><th class="px-4 py-3">Hạn cuối</th><th class="px-4 py-3">Trạng thái</th><th class="px-4 py-3 text-right">Thao tác</th></tr></thead>
-    <tbody>${list.map(o => { const dl = orderDeadlineInfo(o); return `<tr class="order-row" onclick="orderOpenDrawer('${o.id}','handler')">
+    <tbody>${list.map(o => {
+      const dl = orderDeadlineInfo(o);
+      const cancelReason = o.cancelReason || (o.history && o.history.slice().reverse().find(h => h.status === 'rejected')?.note) || '';
+      return `<tr class="order-row" onclick="orderOpenDrawer('${o.id}','handler')">
       <td class="px-4 py-3 text-xs font-bold text-brand-700 whitespace-nowrap">${escapeHtml(o.code)}</td>
       <td class="px-4 py-3"><div class="text-xs font-semibold text-slate-700">${escapeHtml(o.senderName)}</div><div class="text-[10px] text-slate-400">${escapeHtml(o.department)}</div></td>
       <td class="px-4 py-3 text-xs text-slate-600">${escapeHtml(o.docType)}</td>
       <td class="px-4 py-3 text-xs text-slate-700 max-w-xs"><div class="line-clamp-2">${escapeHtml(o.content)}</div></td>
       <td class="px-4 py-3 text-xs text-slate-600">${escapeHtml(o.assigneeName)}</td>
       <td class="px-4 py-3 text-xs whitespace-nowrap">${formatVNDate(o.deadline)}${dl ? `<div class="inline-block mt-0.5 px-1.5 rounded border text-[10px] font-bold ${dl.cls}">${dl.text}</div>` : ''}</td>
-      <td class="px-4 py-3">${orderBadge(o.status)}</td>
-      <td class="px-4 py-3"><div class="flex justify-end flex-wrap gap-1">${orderHandlerActionsHTML(o, false)}</div></td></tr>`; }).join('')}</tbody></table></div>`;
+      <td class="px-4 py-3">
+        ${orderBadge(o.status)}
+        ${o.status === 'rejected' && cancelReason ? `<div class="text-[10px] text-rose-600 font-medium mt-1 max-w-[170px] truncate" title="${escapeHtml(cancelReason)}">Lý do: ${escapeHtml(cancelReason)}</div>` : ''}
+      </td>
+      <td class="px-4 py-3"><div class="flex justify-end flex-wrap gap-1">${orderHandlerActionsHTML(o, false)}</div></td></tr>`;
+    }).join('')}</tbody></table></div>`;
 }
 
 function orderUpdateNavBadges() {
